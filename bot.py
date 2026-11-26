@@ -43,16 +43,17 @@ def sport_emoji(league_str):
     if "футбол" in s: return "⚽"
     if "хоккей" in s: return "🏒"
     if "баскет" in s: return "🏀"
-    if "наст" in s: return "🏓"
-    if "теннис" in s: return "🎾"
+    if "бейсбол" in s: return "⚾"
     if "волей" in s: return "🏐"
-    if "кибер" in s or "cs2" in s or "dota" in s: return "🎮"
+    if "гандбол" in s: return "🤾"
+    if any(k in s for k in ("кибер", "counter", "cs2", "dota", "league of legends", "lol")): return "🎮"
     return "🏆"
 def get_pinnacle_feed():
     now_ts, total_found, balanced, raw_odds = NOW_TLT.timestamp(), 0, [], {}
     pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
-    sports = [(29, "Футбол"), (19, "Хоккей"), (4, "Баскетбол"), (33, "Теннис"), (12, "Киберспорт"), (34, "Волейбол"), (32, "Наст. теннис")]
-    ban_words = ["women", "u18", "u19", "u20", "u21", "youth", "friendly", "reserves", "жен", "юниор", "товар", "молод"]
+    sports = [(29, "Футбол"), (19, "Хоккей"), (4, "Баскетбол"), (3, "Бейсбол"), (34, "Волейбол"), (18, "Гандбол"), (12, "Киберспорт")]
+    ban_words = ["u18", "u19", "youth", "friendly", "reserves", "юниор", "товар"]
+    esports_ok = ["counter-strike", "cs2", "cs:", "dota", "league of legends", "lol"]
     for sid, sname in sports:
         try:
             rm = requests.get(f"https://{pin}/0.1/sports/{sid}/matchups?brandId=0", headers=HEADERS, timeout=8)
@@ -64,7 +65,10 @@ def get_pinnacle_feed():
                 st_iso = (m.get("startTime") or "").replace("Z", "+00:00")
                 parts = m.get("participants", [])
                 lg = m.get("league", {}).get("name", "")
-                if not st_iso or len(parts) < 2 or any(w in lg.lower() for w in ban_words):
+                lg_low = lg.lower()
+                if not st_iso or len(parts) < 2 or any(w in lg_low for w in ban_words):
+                    continue
+                if sid == 12 and not any(k in lg_low for k in esports_ok):
                     continue
                 st_dt = datetime.datetime.fromisoformat(st_iso).astimezone(NOW_TLT.tzinfo)
                 if 5 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
@@ -100,8 +104,8 @@ def get_pinnacle_feed():
             balanced.extend(sp_lines[:4])
         except Exception:
             pass
-    print(f"Pinnacle (проф. спорт): найдено {total_found}, отобрано {len(balanced)}")
-    return "\n".join(balanced[:24]), raw_odds
+    print(f"Pinnacle (9 видов спорта): найдено {total_found}, отобрано {len(balanced)}")
+    return "\n".join(balanced[:28]), raw_odds
 def get_all_sources():
     out = []
     pin_txt, raw_odds = get_pinnacle_feed()
@@ -109,11 +113,15 @@ def get_all_sources():
         out.append("=== ЛИНИЯ PINNACLE (MONEYLINE=1X2, TOTAL=ТОТАЛ, SPREAD=ФОРА) ===\n" + pin_txt)
 
     pm_list, pm_host = [], ".".join(["gamma-api", "polymarket", "com"])
+    allow_pm = ("soccer", "football", "nba", "basketball", "nhl", "hockey", "mlb", "baseball", "volleyball", "handball", "counter-strike", "cs2", "dota", "league of legends", "lol")
     for tag in ["sports", "esports"]:
         try:
-            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=25", headers=HEADERS, timeout=10)
+            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=30", headers=HEADERS, timeout=10)
             if r.status_code == 200:
                 for ev in r.json():
+                    title_low = (ev.get("title", "") + " " + ev.get("slug", "")).lower()
+                    if not any(k in title_low for k in allow_pm):
+                        continue
                     for m in ev.get("markets", [])[:2]:
                         q = m.get("question", ev.get("title", ""))
                         oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
@@ -124,7 +132,7 @@ def get_all_sources():
                                 pm_list.append(line)
         except Exception:
             pass
-    print(f"Polymarket: {len(pm_list)} рынков")
+    print(f"Polymarket (по списку спорта): {len(pm_list)} рынков")
     if pm_list:
         out.append("=== POLYMARKET (ОРИЕНТИР ВЕРОЯТНОСТЕЙ) ===\n" + "\n".join(pm_list[:15]))
     return "\n\n".join(out), raw_odds
@@ -157,13 +165,8 @@ def ask_ai(prompt):
         mr = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=10)
         if mr.status_code == 200:
             skip = ("embed", "imagen", "veo", "aqa", "tts", "robotics", "computer", "research", "lite", "exp")
-            g_models = [
-                m["name"].replace("models/", "")
-                for m in mr.json().get("models", [])
-                if "generateContent" in m.get("supportedGenerationMethods", [])
-                and not any(s in m["name"].lower() for s in skip)
-            ]
-            g_models.sort(key=lambda s: (0 if "flash" in s else 1 if "pro" in s else 2, s), reverse=False)
+            g_models = [m["name"].replace("models/", "") for m in mr.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and not any(s in m["name"].lower() for s in skip)]
+            g_models.sort(key=lambda s: (0 if "flash" in s else 1 if "pro" in s else 2, s))
             for gm in g_models:
                 try:
                     r = requests.post(f"{GEM_HOST}/v1beta/models/{gm}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.25}}, timeout=25)
@@ -177,15 +180,13 @@ def ask_ai(prompt):
                     continue
     except Exception as e:
         print("Google list err:", e)
-
-    print("Все модели Groq и Google временно исчерпали лимит.")
     return ""
-
 def calc_ev(prob, odds):
     return round(float(np.mean(np.where(np.random.default_rng().random(100_000) < prob, odds - 1.0, -1.0))) * 100, 2)
+
 def get_all_live_scores():
     espn, out = ".".join(["site", "api", "espn", "com"]), []
-    paths = ["soccer/all/scoreboard", "football/nfl/scoreboard", "hockey/nhl/scoreboard", "basketball/nba/scoreboard", "tennis/atp/scoreboard", "tennis/wta/scoreboard"]
+    paths = ["soccer/all/scoreboard", "hockey/nhl/scoreboard", "basketball/nba/scoreboard", "baseball/mlb/scoreboard"]
     for p in paths:
         try:
             r = requests.get(f"https://{espn}/apis/site/v2/sports/{p}", headers=HEADERS, timeout=8)
@@ -286,7 +287,6 @@ def check_results(history, rules):
             pass
     return history, rules, upd
 
-
 def check_live(history):
     sent = False
     active = [b for b in history["bets"] if b["status"] == "PENDING" and 5 <= (NOW_TLT - datetime.datetime.fromisoformat(b["start_iso"])).total_seconds() / 60.0 <= 108]
@@ -301,7 +301,7 @@ def check_live(history):
             f"Мировое табло (HT = перерыв, Final/FT = конец):\n{live_board}\nПоиск:\n{info}\n\n"
             f"ПРАВИЛА:\n"
             f"1. Если точного счёта нет, матч уже закончен (Final/FT/Завершён), идёт 90+ минута (добавленное время) или счёт 0:0 без удалений — верни СТРОГО слово OK.\n"
-            f"2. Сообщай ТОЛЬКО пока матч реально идёт в основное время (1-й или 2-й тайм до 89-й минуты) и изменился счёт или дали красную карточку/удаление.\n"
+            f"2. Сообщай ТОЛЬКО пока матч реально идёт в основное время (до 89-й минуты) и изменился счёт или дали красную карточку/удаление.\n"
             f"3. НЕ давай никаких советов (никаких слов «Держать», «Продать», «Перекрыться»!). Пиши СТРОГО на русском языке. Минуту/тайм бери только из табло (если нет — не пиши).\n"
             f"Верни СТРОГО JSON: {{\"score\": \"Х : У\", \"time_info\": \"например: 2-й тайм, 68' или Перерыв (если неизвестно — пусто)\", \"status_text\": \"короткий статус ставки и событий на русском (напр. пока проходит, но команда в меньшинстве)\"}}"
         ).strip()
@@ -351,21 +351,18 @@ def find_matches(history, rules, mkt_txt):
     taken = {b["match"] for b in history["bets"]}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
     tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
-    s1 = web_search(f"прогнозы обе забьют индивидуальный тотал ТБ ТМ {d_str} {tom_str} футбол хоккей КХЛ НХЛ")
-    s2 = web_search(f"CS2 Dota 2 баскетбол теннис волейбол прогнозы тотал фора {d_str} {tom_str}")
+    s1 = web_search(f"прогнозы обе забьют индивидуальный тотал ТБ ТМ {d_str} {tom_str} футбол хоккей баскетбол волейбол гандбол бейсбол")
+    s2 = web_search(f"Counter-Strike CS2 Dota 2 League of Legends прогнозы тотал фора {d_str} {tom_str}")
     prompt = (
         f"Ты опытный квантовый аналитик ставок. Пиши СТРОГО на русском языке.\n"
         f"Текущее время: {d_str} {t_str}. Правила:\n{rules}\n\n{mkt_txt}\n\n"
         f"НОВОСТИ И ПРОГНОЗЫ:\n{s1}\n{s2}\n\n"
-        f"Найди 2–5 лучших ставок по гибкой математической модели на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}):\n"
-        f"• Для кэфов 1.60–2.05: реальный шанс захода строго от 54% и выше.\n"
-        f"• Для кэфов 2.06–2.45: реальный шанс захода от 48% и выше (сильные обратки и ничьи с перевесом от +5%).\n"
-        f"СТРОГИЕ ПРАВИЛА:\n"
-        f"1. ЗАПРЕЩЕНО брать женские, товарищеские и молодёжные/юниорские (U18/U20/U21) матчи. Только взрослый профессиональный спорт!\n"
-        f"2. Обязательно ищи в линии Pinnacle и прогнозах Тоталы (ТБ/ТМ), Форы (Ф1/Ф2), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (Да/Нет), а не только П1/П2.\n"
-        f"3. Оценивай вероятность консервативно (учитывай маржу Pinnacle ~2% как эталон честной линии).\n"
-        f"4. ПЕРЕВЕДИ НА РУССКИЙ ВСЁ: команды, вид спорта и лигу, ставку (без английских слов). В поле orig_match укажи точное название матча из линии Pinnacle на английском.\n"
-        f"Верни СТРОГО JSON-массив: [{{\"match\": \"Команда 1 — Команда 2\", \"orig_match\": \"Team 1 — Team 2\", \"league\": \"Вид спорта • Лига\", \"start_time\": \"ДД.ММ ЧЧ:ММ\", \"type\": \"Валуй или Обратка\", \"pick\": \"Ставка на русском\", \"odds\": 1.88, \"prob\": 0.58}}]."
+        f"Найди 2–6 лучших ставок на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}):\n"
+        f"• РАБОТАЕМ ТОЛЬКО ПО ЭТИМ 9 ДИСЦИПЛИНАМ (мужские и женские взрослые лиги): Баскетбол, Бейсбол, Волейбол, Гандбол, Counter-Strike, Dota 2, League of Legends, Футбол, Хоккей. Другие виды спорта брать ЗАПРЕЩЕНО!\n"
+        f"• Кэфы от 1.60 до 2.45, реальный шанс захода от 50% и выше, перевес над линией от +2.0%.\n"
+        f"• Обязательно ищи в линии Pinnacle и прогнозах Тоталы (ТБ/ТМ), Форы (Ф1/Ф2), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (Да/Нет), а не только П1/П2.\n"
+        f"• ПЕРЕВЕДИ НА РУССКИЙ ВСЁ: команды, вид спорта и лигу, ставку (без английских слов). В поле orig_match укажи точное название матча из линии Pinnacle на английском.\n"
+        f"Верни СТРОГО JSON-массив: [{{\"match\": \"Команда 1 — Команда 2\", \"orig_match\": \"Team 1 — Team 2\", \"league\": \"Вид спорта • Лига\", \"start_time\": \"ДД.ММ ЧЧ:ММ\", \"type\": \"Валуй или Обратка\", \"pick\": \"Ставка на русском\", \"odds\": 1.88, \"prob\": 0.55}}]."
     )
     raw = ask_ai(prompt)
     try:
@@ -385,15 +382,13 @@ def find_matches(history, rules, mkt_txt):
             mkt_prob = 1.0 / odds
             prob = round(raw_prob * 0.75 + mkt_prob * 0.25, 3)
             ev = calc_ev(prob, odds)
-            ok_low = (odds <= 2.05 and prob >= 0.54 and ev >= 2.0)
-            ok_high = (odds > 2.05 and prob >= 0.48 and ev >= 5.0)
-            if not (ok_low or ok_high):
-                print(f"Отсеян гибким фильтром: {m_name} @ {odds} (сглаж. шанс {prob*100:.1f}%, перевес {ev}%)")
+            if prob < 0.50 or ev < 2.0:
+                print(f"Отсеян фильтром 50%: {m_name} @ {odds} (сглаж. шанс {prob*100:.1f}%, перевес {ev}%)")
                 continue
             print(f"Принят моделью: {m_name} | {c.get('pick')} @ {odds} | шанс={prob*100:.1f}% -> перевес={ev}%")
             fair_odds = round(1.0 / prob, 2)
             min_odds = round(1.03 / prob, 2)
-            rel = "Высокая (3/3)" if (ev >= 6.0 and prob >= 0.55) else "Хорошая (2/3)"
+            rel = "Высокая (3/3)" if (ev >= 6.0 and prob >= 0.54) else "Хорошая (2/3)"
             st = parse_start_dt(c.get("start_time", ""))
             lg_str = c.get("league", "")
             ico = sport_emoji(lg_str)
@@ -446,7 +441,7 @@ def main():
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
     if is_manual and not (u1 or u2 or live_sent or pre_sent):
-        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%d.%m.%Y %H:%M')})</b>\nВсе источники опрошены. Новых матчей с высоким шансом и перевесом пока нет.")
+        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%d.%m.%Y %H:%M')})</b>\nВсе источники опрошены. Новых матчей по 9 выбранным дисциплинам пока нет.")
     print(f"Готово ({NOW_TLT.strftime('%d.%m.%Y %H:%M')}). Лайв: {live_sent}, Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
