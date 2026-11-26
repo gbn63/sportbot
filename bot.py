@@ -1,3 +1,36 @@
+import os, json, time, datetime, requests, warnings
+import numpy as np
+from ddgs import DDGS
+
+warnings.filterwarnings("ignore")
+
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+CHAT_ID = os.environ["CHAT_ID"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
+
+TG_HOST = "https://" + ".".join(["api", "telegram", "org"])
+GEM_HOST = "https://" + ".".join(["generativelanguage", "googleapis", "com"])
+MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0", "Accept": "application/json"}
+
+def send_tg(text):
+    try:
+        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+        if r.status_code != 200:
+            print("TG HTTP error:", r.status_code, r.text[:100])
+            return False
+        return True
+    except Exception as e:
+        print("TG error:", e)
+        return False
+
+def web_search(q, n=5):
+    try:
+        with DDGS() as d:
+            return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, max_results=n)])
+    except Exception as e:
+        return f"Search err: {e}"
 def get_fonbet():
     now_ts = NOW_TLT.timestamp()
     for sub in ["line01", "line02", "line03"]:
