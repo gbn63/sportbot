@@ -40,6 +40,58 @@
       "stake_rub": 139.0,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Ecatepec — Atlético Mexicano F.E.",
+      "league": "Mexico - Liga TDP",
+      "start_iso": "2026-11-27T02:00:00+04:00",
+      "type": "Обратка",
+      "pick": "П2 (победа гостя)",
+      "odds": 1.79,
+      "prob": 0.6,
+      "ev": 6.9,
+      "stake_rub": 239.0,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Club Leon — Cruz Azul",
+      "league": "Mexico - Liga MX Corners",
+      "start_iso": "2026-11-27T07:10:00+04:00",
+      "type": "Валуй",
+      "pick": "ИТМ1 (over 4.5) – угловые обеих команд",
+      "odds": 1.73,
+      "prob": 0.65,
+      "ev": 12.49,
+      "stake_rub": 435.0,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "PVISION — Liquid",
+      "league": "Dota 2 - BLAST Slam",
+      "start_iso": "2026-11-27T14:00:00+04:00",
+      "type": "Обратка",
+      "pick": "Ф2 (+1.5) – победа и покрытие фору гостя",
+      "odds": 1.91,
+      "prob": 0.55,
+      "ev": 4.32,
+      "stake_rub": 141.0,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Sonder of Rosario — Boca Juniors",
+      "league": "Argentina - LVA",
+      "start_iso": "2026-11-27T04:00:00+04:00",
+      "type": "Обратка",
+      "pick": "Ф2 (-1.5) – победа и покрытие фору гостя",
+      "odds": 1.89,
+      "prob": 0.57,
+      "ev": 7.87,
+      "stake_rub": 221.0,
+      "status": "PENDING",
+      "score": ""
     }
   ]
 }
