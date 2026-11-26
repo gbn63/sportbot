@@ -37,7 +37,9 @@ def get_market_data():
     now_ts, out = NOW_TLT.timestamp(), []
     try:
         pm_host = ".".join(["gamma-api", "polymarket", "com"])
-        r = requests.get(f"https://{pm_host}/events?active=true&closed=false&limit=50&order=volume24hr&ascending=false", headers=HEADERS, timeout=12)
+        r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug=sports&limit=80", headers=HEADERS, timeout=12)
+        if r.status_code != 200 or not r.json():
+            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&limit=100&order=volume24hr&ascending=false", headers=HEADERS, timeout=12)
         if r.status_code == 200:
             pm_list = []
             for ev in r.json():
@@ -48,46 +50,40 @@ def get_market_data():
                     if q and len(oc) == len(pr) and pr:
                         pm_list.append(f"- {q} -> " + ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(oc, pr)]))
             print(f"Polymarket: {len(pm_list)} рынков")
-            out.append("=== POLYMARKET (РЕАЛЬНЫЕ ВЕРОЯТНОСТИ РЫНКА) ===\n" + "\n".join(pm_list[:25]))
+            out.append("=== POLYMARKET (ВЕРОЯТНОСТИ РЫНКА) ===\n" + "\n".join(pm_list[:35]))
     except Exception as e:
         print("Polymarket err:", e)
 
-    espn = ".".join(["site", "api", "espn", "com"])
-    leagues = [
-        ("Еврофутбол (Топ/Еврокубки)", "soccer/all/scoreboard"),
-        ("АПЛ", "soccer/eng.1/scoreboard"),
-        ("Ла Лига", "soccer/esp.1/scoreboard"),
-        ("Серия А", "soccer/ita.1/scoreboard"),
-        ("Бундеслига", "soccer/ger.1/scoreboard"),
-        ("Лига Чемпионов", "soccer/uefa.champions/scoreboard"),
-        ("Хоккей НХЛ", "hockey/nhl/scoreboard"),
-        ("Баскетбол НБА", "basketball/nba/scoreboard")
-    ]
-        d_list = [NOW_TLT.strftime("%Y%m%d"), (NOW_TLT + datetime.timedelta(days=1)).strftime("%Y%m%d")]
-    espn_list = []
-    for title, path in leagues:
-        for dt_param in d_list:
-            try:
-                r = requests.get(f"https://{espn}/apis/site/v2/sports/{path}?dates={dt_param}", headers=HEADERS, timeout=10)
-                if r.status_code != 200:
-                    continue
-                for ev in r.json().get("events", []):
-                    dt_iso = ev.get("date", "").replace("Z", "+00:00")
+    odds_key = os.environ.get("ODDS_API_KEY", "").strip()
+    if odds_key:
+        try:
+            oa_host = ".".join(["api", "the-odds-api", "com"])
+            url = f"https://{oa_host}/v4/sports/upcoming/odds/?apiKey={odds_key}&regions=eu&markets=h2h&oddsFormat=decimal"
+            r = requests.get(url, headers=HEADERS, timeout=15)
+            if r.status_code == 200:
+                bk_list = []
+                for ev in r.json():
+                    dt_iso = ev.get("commence_time", "").replace("Z", "+00:00")
                     if not dt_iso:
                         continue
                     st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
                     if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
-                        comp = next(iter(ev.get("competitions", [])), {})
-                        odds_txt = f" | Линия: {comp['odds'].get('details', '')}" if comp.get("odds") else ""
-                        line = f"[{st_dt.strftime('%d.%m %H:%M')}] {title}: {ev.get('name', '')}{odds_txt}"
-                        if line not in espn_list:
-                            espn_list.append(line)
-            except Exception:
-                pass
-
-    print(f"ESPN (Европа + США): {len(espn_list)} матчей")
-    if espn_list:
-        out.append("=== ESPN (СТАРТ ЧЕРЕЗ 15-240 МИН) ===\n" + "\n".join(espn_list[:35]))
+                        bms = ev.get("bookmakers", [])
+                        if not bms:
+                            continue
+                        mkts = next(iter(bms)).get("markets", [])
+                        if not mkts:
+                            continue
+                        outcomes = next(iter(mkts)).get("outcomes", [])
+                        o_str = ", ".join([f"{o['name']}={o['price']}" for o in outcomes])
+                        bk_list.append(f"[{st_dt.strftime('%d.%m %H:%M')}] {ev.get('sport_title', '')}: {ev.get('home_team', '')} — {ev.get('away_team', '')} | Кэфы: {o_str}")
+                print(f"Линия БК (Odds API): {len(bk_list)} матчей с кэфами (остаток запросов: {r.headers.get('x-requests-remaining', '?')})")
+                if bk_list:
+                    out.append("=== ЖИВАЯ ЛИНИЯ БУКМЕКЕРОВ (СТАРТ ЧЕРЕЗ 15-960 МИН) ===\n" + "\n".join(bk_list[:45]))
+            else:
+                print("Odds API HTTP:", r.status_code)
+        except Exception as e:
+            print("Odds API err:", e)
 
     try:
         od_host = ".".join(["api", "opendota", "com"])
@@ -95,7 +91,7 @@ def get_market_data():
         if r.status_code == 200:
             dota = [f"{m.get('radiant_name')} vs {m.get('dire_name')} ({m.get('league_name', '')})" for m in r.json()[:8] if m.get("radiant_name")]
             if dota:
-                out.append("=== DOTA 2 (АКТУАЛЬНЫЕ ПРО-СЕРИИ) ===\n" + "; ".join(dota))
+                out.append("=== DOTA 2 (ПРО-СЕРИИ) ===\n" + "; ".join(dota))
     except Exception:
         pass
 
