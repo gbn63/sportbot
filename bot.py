@@ -55,7 +55,8 @@ def get_market_data():
         print("Polymarket err:", e)
 
     odds_key = os.environ.get("ODDS_API_KEY", "").strip()
-    if odds_key:
+    if odds_key and ((NOW_TLT.hour * 60 + NOW_TLT.minute) % 90 < 5 or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"):
+
         try:
             oa_host = ".".join(["api", "the-odds-api", "com"])
             url = f"https://{oa_host}/v4/sports/upcoming/odds/?apiKey={odds_key}&regions=eu&markets=h2h&oddsFormat=decimal"
@@ -172,12 +173,21 @@ def check_live(history):
         if bet["status"] != "PENDING":
             continue
         mins = (NOW_TLT - datetime.datetime.fromisoformat(bet["start_iso"])).total_seconds() / 60.0
-        if 10 <= mins <= 135:
-            info = web_search(f"{bet['match']} live счет статистика сейчас score")
-            adv = ask_ai(f"Матч {bet['match']} в лайве (~{int(mins)} мин). Ставка: {bet['pick']} ({bet['odds']}). Данные:\n{info}\nЕсли данных о текущем счёте нет или всё идёт по плану — верни СТРОГО слово OK. Только если есть реальный счёт и он против плана — дай совет в 3 строки: ДЕРЖАТЬ, ПРОДАТЬ или ПЕРЕКРЫТЬСЯ.").strip()
+        if 5 <= mins <= 135:
+            info = web_search(f"{bet['match']} live счет минута статистика сейчас score")
+            adv = ask_ai(
+                f"Матч {bet['match']} в лайве (~{int(mins)} мин от старта). Наша ставка: {bet['pick']} за {bet['odds']}.\n"
+                f"Данные поиска:\n{info}\n\n"
+                f"Если в поиске нет актуального счёта или игра идёт по нашему плану — верни СТРОГО слово OK.\n"
+                f"Если есть реальный счёт и события идут против нашей ставки — верни СТРОГО в 3 строки:\n"
+                f"Счёт: [текущий счёт и минута/период]\n"
+                f"Действие: [ДЕРЖАТЬ / ПРОДАТЬ (КЭШАУТ) / ПЕРЕКРЫТЬСЯ]\n"
+                f"Причина: [короткое чёткое объяснение по ходу игры, почему нужно это сделать]"
+            ).strip()
             if adv and "OK" not in adv[:15].upper() and send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
                 sent = True
     return sent
+
 
 
 def find_matches(history, rules):
@@ -225,17 +235,26 @@ def main():
         history = json.load(f)
     with open("rules.txt", "r", encoding="utf-8") as f:
         rules = f.read()
+
     history, rules, u1 = check_results(history, rules)
     live_sent = check_live(history)
-    history, u2 = find_matches(history, rules)
+
+    is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    u2 = False
+    if is_manual or NOW_TLT.minute < 5:
+        history, u2 = find_matches(history, rules)
+
     if u1 or u2:
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
-    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and not (u1 or u2 or live_sent):
-        send_tg(f"🤖 <b>Система 5.0 на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nСвязь с каналом и ИИ работает штатно. Подходящих матчей с +EV ≥ 5% в ближайшие 12 часов не найдено.")
-    print(f"Готово ({NOW_TLT.strftime('%H:%M')} ТЛТ). Обновлено: {u1 or u2}")
+
+    if is_manual and not (u1 or u2 or live_sent):
+        send_tg(f"🤖 <b>Система 5.0 на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nСвязь с каналом и ИИ работает штатно. Новых матчей с +EV ≥ 5% не найдено.")
+
+    print(f"Готово ({NOW_TLT.strftime('%H:%M')} ТЛТ). Лайв: {live_sent}, Обновлено: {u1 or u2}")
+
 
 if __name__ == "__main__":
     main()
