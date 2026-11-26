@@ -97,19 +97,6 @@ def get_market_data():
     return "\n\n".join(out)
 
 def ask_ai(prompt):
-    for m in ["gemini-3.8-flash", "gemini-3.6-flash"]:
-        try:
-            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
-            if r.status_code == 200:
-                cand = next(iter(r.json()["candidates"]))
-                part = next(iter(cand["content"]["parts"]))
-                txt = part["text"]
-                print(f"ИИ ({m}) ответил: {len(txt)} симв.")
-                return txt
-            print(f"Model {m} HTTP {r.status_code}")
-        except Exception:
-            print(f"Model {m} err: timeout/net")
-
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if groq_key:
         try:
@@ -118,7 +105,6 @@ def ask_ai(prompt):
             mr = requests.get(f"{g_url}/models", headers=hdr, timeout=10)
             if mr.status_code == 200:
                 avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus"])]
-                print("Groq модели:", avail[:4])
                 for gm in avail[:3]:
                     r = requests.post(f"{g_url}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=20)
                     if r.status_code == 200:
@@ -126,22 +112,22 @@ def ask_ai(prompt):
                         txt = choice["message"]["content"]
                         print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
                         return txt
-            else:
-                print("Groq models HTTP:", mr.status_code)
         except Exception as e:
             print("Groq err:", e)
 
-    try:
-        r = requests.post(f"{GEM_HOST}/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
-        if r.status_code == 200:
-            cand = next(iter(r.json()["candidates"]))
-            part = next(iter(cand["content"]["parts"]))
-            txt = part["text"]
-            print(f"ИИ (gemini-3.5-flash-lite) ответил: {len(txt)} симв.")
-            return txt
-    except Exception:
-        pass
+    for m in ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"]:
+        try:
+            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
+            if r.status_code == 200:
+                cand = next(iter(r.json()["candidates"]))
+                part = next(iter(cand["content"]["parts"]))
+                txt = part["text"]
+                print(f"ИИ ({m}) ответил: {len(txt)} симв.")
+                return txt
+        except Exception:
+            pass
     return ""
+
 
 
 
