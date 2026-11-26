@@ -33,13 +33,12 @@ def web_search(q, n=5):
         return f"Search err: {e}"
 def get_fonbet():
     now_ts = NOW_TLT.timestamp()
-    dom = ".".join(["bk6bba-resources", "com"])
+    dom = ".".join(["fon", "bet"])
     for sub in ["line01", "line02", "line03"]:
         try:
             url = f"https://{sub}.{dom}/events/list?lang=ru&version=0&scopeMarket=1600"
             r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code != 200:
-                print(f"Фонбет {sub} HTTP:", r.status_code)
                 continue
             data = r.json()
             sports = {s["id"]: s.get("name", "") for s in data.get("sports", [])}
@@ -58,7 +57,7 @@ def get_fonbet():
                     st_str = datetime.datetime.fromtimestamp(st_ts, tz=NOW_TLT.tzinfo).strftime("%H:%M")
                     out.append(f"[{st_str}] {sports.get(ev.get('sportId'), '')} | {t1} — {t2} | {', '.join(odds)}")
             print(f"Фонбет ({sub}): {len(out)} матчей")
-            return "\n".join(out[:45])
+            return "\n".join(out[:50])
         except Exception as e:
             print(f"Фонбет {sub} err:", e)
     return "Фонбет недоступен с IP GitHub."
@@ -68,7 +67,6 @@ def get_polymarket():
         pm_host = ".".join(["gamma-api", "polymarket", "com"])
         r = requests.get(f"https://{pm_host}/events?active=true&closed=false&limit=50&order=volume24hr&ascending=false", headers=HEADERS, timeout=12)
         if r.status_code != 200:
-            print("Polymarket HTTP:", r.status_code)
             return ""
         out = []
         for ev in r.json():
@@ -87,23 +85,41 @@ def get_polymarket():
         return ""
 
 def get_sofascore():
-    d_str, now_ts, out = NOW_TLT.strftime("%Y-%m-%d"), NOW_TLT.timestamp(), []
-    sf_host = ".".join(["api", "sofascore", "com"])
-    sf_headers = {**HEADERS, "Referer": f"https://sofascore.com"}
-    for sp in ["football", "ice-hockey", "basketball", "tennis"]:
+    now_ts, out = NOW_TLT.timestamp(), []
+    espn = ".".join(["site", "api", "espn", "com"])
+    paths = [
+        ("Еврофутбол/Мир", "soccer/all/scoreboard"),
+        ("Хоккей НХЛ", "hockey/nhl/scoreboard"),
+        ("Баскетбол НБА", "basketball/nba/scoreboard")
+    ]
+    for title, p in paths:
         try:
-            r = requests.get(f"https://{sf_host}/api/v1/sport/{sp}/scheduled-events/{d_str}", headers=sf_headers, timeout=10)
+            r = requests.get(f"https://{espn}/apis/site/v2/sports/{p}", headers=HEADERS, timeout=10)
             if r.status_code != 200:
                 continue
             for ev in r.json().get("events", []):
-                st_ts = ev.get("startTimestamp", 0)
-                if 15 <= (st_ts - now_ts) / 60.0 <= 120:
-                    st_str = datetime.datetime.fromtimestamp(st_ts, tz=NOW_TLT.tzinfo).strftime("%H:%M")
-                    out.append(f"[{st_str}] {ev.get('tournament', {}).get('name', sp)}: {ev.get('homeTeam', {}).get('name', '')} — {ev.get('awayTeam', {}).get('name', '')}")
+                dt_iso = ev.get("date", "").replace("Z", "+00:00")
+                if not dt_iso:
+                    continue
+                st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
+                if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 120:
+                    comp = next(iter(ev.get("competitions", [])), {})
+                    odds_txt = f" | Линия: {comp['odds'].get('details', '')}" if comp.get("odds") else ""
+                    out.append(f"[{st_dt.strftime('%H:%M')}] {title}: {ev.get('name', '')}{odds_txt}")
         except Exception:
             pass
-    print(f"Sofascore: {len(out)} матчей")
-    return "\n".join(out[:40])
+    try:
+        od_host = ".".join(["api", "opendota", "com"])
+        r = requests.get(f"https://{od_host}/api/proMatches", headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            recent = [f"{m.get('radiant_name')} vs {m.get('dire_name')} ({m.get('league_name', '')})" for m in r.json()[:8] if m.get("radiant_name") and m.get("dire_name")]
+            if recent:
+                out.append("Dota 2 (актуальные про-серии OpenDota): " + "; ".join(recent))
+    except Exception:
+        pass
+    print(f"Евроспорт + Dota 2: {len(out)} записей")
+    return "\n".join(out[:45])
+
 
 
 def ask_ai(prompt):
