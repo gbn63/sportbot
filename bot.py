@@ -24,73 +24,76 @@ def send_tg(text):
         print("TG err:", e)
         return False
 
-def web_search(q, n=8):
+def web_search(q, n=6):
     try:
         with DDGS() as d:
             return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, timelimit="d", max_results=n)])
     except Exception as e:
         return f"Search err: {e}"
 
-def get_1x_feed():
+def am_to_dec(p):
+    try:
+        p = float(p)
+        return round(1.0 + p / 100.0, 2) if p > 0 else round(1.0 + 100.0 / abs(p), 2)
+    except Exception:
+        return 0.0
+
+def get_pinnacle_feed():
     now_ts, out = NOW_TLT.timestamp(), []
-    mirrors = [".".join(["1xbet", "com"]), ".".join(["melbet", "com"]), ".".join(["betwinner", "com"])]
-    for dom in mirrors:
+    pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
+    sports = [(29, "Футбол"), (19, "Хоккей"), (4, "Баскетбол"), (33, "Теннис"), (12, "Киберспорт"), (34, "Волейбол"), (32, "Наст.теннис")]
+    for sid, sname in sports:
         try:
-            url = f"https://{dom}/LineFeed/Get1x2_VZip?count=120&lng=ru&mode=4&getEmpty=true"
-            r = requests.get(url, headers=HEADERS, timeout=12)
-            if r.status_code != 200:
+            rm = requests.get(f"https://{pin}/0.1/sports/{sid}/matchups?brandId=0", headers=HEADERS, timeout=8)
+            rp = requests.get(f"https://{pin}/0.1/sports/{sid}/markets/straight?primaryOnly=true&withSpecials=false", headers=HEADERS, timeout=8)
+            if rm.status_code != 200 or rp.status_code != 200:
                 continue
-            for ev in r.json().get("Value", []):
-                st_ts = ev.get("S", 0)
-                if not (15 <= (st_ts - now_ts) / 60.0 <= 960):
+            m_map = {}
+            for m in rm.json():
+                st_iso = (m.get("startTime") or "").replace("Z", "+00:00")
+                parts = m.get("participants", [])
+                if not st_iso or len(parts) < 2:
                     continue
-                t1, t2 = ev.get("O1", ""), ev.get("O2", "")
-                if not t1 or not t2:
+                st_dt = datetime.datetime.fromisoformat(st_iso).astimezone(NOW_TLT.tzinfo)
+                if 5 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
+                    home = next((x.get("name") for x in parts if x.get("alignment") == "home"), next(iter(parts)).get("name", ""))
+                    away = next((x.get("name") for x in parts if x.get("alignment") == "away"), parts[-1].get("name", ""))
+                    lg = m.get("league", {}).get("name", "")
+                    m_map[m["id"]] = f"[{st_dt.strftime('%d.%m %H:%M')}] {sname} ({lg}): {home} — {away}"
+            odds_map = {}
+            for mk in rp.json():
+                mid = mk.get("matchupId")
+                if mid not in m_map or mk.get("period") != 0:
                     continue
-                odds = [f"{e.get('T')}={e.get('C')}" for e in ev.get("E", []) if e.get("T") in (1, 2, 3, 4, 5, 6)]
-                if odds:
-                    st_str = datetime.datetime.fromtimestamp(st_ts, tz=NOW_TLT.tzinfo).strftime("%d.%m %H:%M")
-                    out.append(f"[{st_str}] {ev.get('SN', '')} ({ev.get('L', '')}): {t1} — {t2} | {', '.join(odds)}")
-            if out:
-                print(f"Зеркало БК ({dom}): {len(out)} матчей")
-                return "\n".join(out[:50])
+                mtype = mk.get("type", "")
+                plist = []
+                for pr in mk.get("prices", []):
+                    dec = am_to_dec(pr.get("price", 0))
+                    if dec > 1.01:
+                        pt = f"({pr['points']})" if "points" in pr else ""
+                        plist.append(f"{pr.get('designation', '')}{pt}={dec}")
+                if plist:
+                    odds_map.setdefault(mid, []).append(f"{mtype}:[{','.join(plist)}]")
+            for mid, title in m_map.items():
+                if mid in odds_map:
+                    out.append(f"{title} | {' ; '.join(odds_map[mid][:2])}")
         except Exception:
             pass
-    print("Прямые зеркала 1x/Melbet недоступны с IP США.")
-    return ""
+    print(f"Pinnacle (весь мир): {len(out)} матчей с кэфами")
+    return "\n".join(out[:35])
 def get_all_sources():
     now_ts, out = NOW_TLT.timestamp(), []
-    bk_direct = get_1x_feed()
-    if bk_direct:
-        out.append("=== ПРЯМАЯ ЛИНИЯ БК (1=П1, 2=Х, 3=П2, 4=1Х, 5=12, 6=Х2) ===\n" + bk_direct)
-
-    ps_key = os.environ.get("PANDASCORE_KEY", "").strip()
-    if ps_key:
-        try:
-            ps_host = ".".join(["api", "pandascore", "co"])
-            r = requests.get(f"https://{ps_host}/matches/upcoming?sort=begin_at&page[size]=35", headers={"Authorization": f"Bearer {ps_key}", "Accept": "application/json"}, timeout=12)
-            if r.status_code == 200:
-                ps_list = []
-                for m in r.json():
-                    b_iso = (m.get("begin_at") or "").replace("Z", "+00:00")
-                    if not b_iso:
-                        continue
-                    st_dt = datetime.datetime.fromisoformat(b_iso).astimezone(NOW_TLT.tzinfo)
-                    if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
-                        ps_list.append(f"[{st_dt.strftime('%d.%m %H:%M')}] {m.get('videogame', {}).get('name', '')} ({m.get('league', {}).get('name', '')}): {m.get('name', '')}")
-                print(f"PandaScore: {len(ps_list)} матчей")
-                if ps_list:
-                    out.append("=== PANDASCORE (КИБЕРСПОРТ) ===\n" + "\n".join(ps_list[:30]))
-        except Exception as e:
-            print("PandaScore err:", e)
+    pin_txt = get_pinnacle_feed()
+    if pin_txt:
+        out.append("=== ЛИНИЯ PINNACLE (MONEYLINE=1X2, TOTAL=ТОТАЛ, SPREAD=ФОРА) ===\n" + pin_txt)
 
     pm_list, pm_host = [], ".".join(["gamma-api", "polymarket", "com"])
     for tag in ["sports", "esports"]:
         try:
-            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=60", headers=HEADERS, timeout=12)
+            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=30", headers=HEADERS, timeout=10)
             if r.status_code == 200:
                 for ev in r.json():
-                    for m in ev.get("markets", [])[:3]:
+                    for m in ev.get("markets", [])[:2]:
                         q = m.get("question", ev.get("title", ""))
                         oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
                         pr = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
@@ -102,13 +105,13 @@ def get_all_sources():
             pass
     print(f"Polymarket: {len(pm_list)} рынков")
     if pm_list:
-        out.append("=== POLYMARKET (ВЕРОЯТНОСТИ РЫНКА) ===\n" + "\n".join(pm_list[:40]))
+        out.append("=== POLYMARKET ===\n" + "\n".join(pm_list[:18]))
 
     odds_key = os.environ.get("ODDS_API_KEY", "").strip()
-    if odds_key and ((NOW_TLT.hour * 60 + NOW_TLT.minute) % 90 < 5 or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"):
+    if odds_key and ((NOW_TLT.hour * 60 + NOW_TLT.minute) % 120 < 5 or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"):
         try:
             oa_host = ".".join(["api", "the-odds-api", "com"])
-            url = f"https://{oa_host}/v4/sports/upcoming/odds/?apiKey={odds_key}&regions=eu&markets=h2h,totals,spreads&oddsFormat=decimal"
+            url = f"https://{oa_host}/v4/sports/upcoming/odds/?apiKey={odds_key}&regions=eu&markets=h2h,totals&oddsFormat=decimal"
             r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code == 200:
                 bk_list = []
@@ -117,7 +120,7 @@ def get_all_sources():
                     if not dt_iso:
                         continue
                     st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
-                    if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
+                    if 2 <= (st_dt.timestamp() - now_ts) / 60.0 <= 1440:
                         bms = ev.get("bookmakers", [])
                         if not bms:
                             continue
@@ -126,32 +129,14 @@ def get_all_sources():
                             o_str = ", ".join([f"{o['name']}({o.get('point', '')})={o['price']}".replace("()", "") for o in m.get("outcomes", [])])
                             mkt_strs.append(f"{m.get('key', '')}: [{o_str}]")
                         bk_list.append(f"[{st_dt.strftime('%d.%m %H:%M')}] {ev.get('sport_title', '')}: {ev.get('home_team', '')} — {ev.get('away_team', '')} | {' ; '.join(mkt_strs)}")
-                print(f"Odds API (1Х2+Тоталы+Форы): {len(bk_list)} матчей (остаток: {r.headers.get('x-requests-remaining', '?')})")
+                print(f"Odds API (1Х2+Тоталы): {len(bk_list)} матчей (остаток: {r.headers.get('x-requests-remaining', '?')})")
                 if bk_list:
-                    out.append("=== ODDS API (1Х2, ТОТАЛЫ, ФОРЫ) ===\n" + "\n".join(bk_list[:40]))
+                    out.append("=== ODDS API ===\n" + "\n".join(bk_list[:20]))
         except Exception as e:
             print("Odds API err:", e)
 
-    try:
-        sdb_host = ".".join(["www", "thesportsdb", "com"])
-        r = requests.get(f"https://{sdb_host}/api/v1/json/3/eventsday.php?d={NOW_TLT.strftime('%Y-%m-%d')}", headers=HEADERS, timeout=10)
-        if r.status_code == 200 and r.json().get("events"):
-            sdb = [f"[{e.get('strTime', '')[:5]}] {e.get('strSport', '')} ({e.get('strLeague', '')}): {e.get('strEvent', '')}" for e in r.json()["events"][:25]]
-            out.append("=== THESPORTSDB (МИРОВОЙ СПОРТ) ===\n" + "\n".join(sdb))
-    except Exception:
-        pass
-
-    try:
-        od_host = ".".join(["api", "opendota", "com"])
-        r = requests.get(f"https://{od_host}/api/proMatches", headers=HEADERS, timeout=10)
-        if r.status_code == 200:
-            dota = [f"{m.get('radiant_name')} vs {m.get('dire_name')} ({m.get('league_name', '')})" for m in r.json()[:8] if m.get("radiant_name")]
-            if dota:
-                out.append("=== DOTA 2 (OPENDOTA) ===\n" + "; ".join(dota))
-    except Exception:
-        pass
-
     return "\n\n".join(out)
+
 def ask_ai(prompt):
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if groq_key:
@@ -168,6 +153,7 @@ def ask_ai(prompt):
                         txt = choice["message"]["content"]
                         print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
                         return txt
+                    print(f"Groq {gm} HTTP {r.status_code}: {r.text[:90]}")
         except Exception as e:
             print("Groq err:", e)
 
@@ -183,7 +169,6 @@ def ask_ai(prompt):
         except Exception:
             pass
     return ""
-
 def calc_stats(prob, odds, bank):
     ev = round(float(np.mean(np.where(np.random.default_rng().random(100_000) < prob, odds - 1.0, -1.0))) * 100, 2)
     b = odds - 1.0
@@ -232,6 +217,7 @@ def check_results(history, rules):
         except Exception:
             pass
     return history, rules, upd
+
 def check_live(history):
     sent = False
     active = [b for b in history["bets"] if b["status"] == "PENDING" and 5 <= (NOW_TLT - datetime.datetime.fromisoformat(b["start_iso"])).total_seconds() / 60.0 <= 135]
@@ -251,7 +237,6 @@ def check_live(history):
         if adv and "OK" not in adv[:15].upper() and send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
             sent = True
     return sent
-
 def parse_start_dt(t_str):
     parts = str(t_str).strip().split(":")
     if len(parts) == 2 and parts[-1].isdigit():
@@ -269,12 +254,11 @@ def find_matches(history, rules):
     tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
     mkt = get_all_sources()
     s1 = web_search(f"прогнозы обе забьют индивидуальный тотал ТБ ТМ {d_str} {tom_str} футбол хоккей КХЛ НХЛ")
-    s2 = web_search(f"прогнозы коэффициенты баскетбол волейбол теннис гандбол снукер {d_str} {tom_str}")
-    s3 = web_search(f"CS2 Dota 2 LoL Valorant прогнозы коэффициенты тотал карт {d_str} {tom_str}")
+    s2 = web_search(f"CS2 Dota 2 баскетбол теннис волейбол прогнозы коэффициенты {d_str} {tom_str}")
     prompt = (
         f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\n"
-        f"ПОИСК (ОЗ / ИТБ / ТОТАЛЫ):\n{s1}\n\nПОИСК (БАСКЕТ / ТЕННИС / СМОЛМАРКЕТЫ):\n{s2}\n\nПОИСК (КИБЕРСПОРТ):\n{s3}\n\n"
-        f"Проанализируй ВЕСЬ спорт и киберспорт мира (футбол, хоккей, баскетбол, теннис, волейбол, гандбол, снукер, футзал, CS2, Dota 2, LoL, Valorant и др.) "
+        f"ПОИСК (ОЗ / ИТБ / ТОТАЛЫ / СПОРТ):\n{s1}\n\nПОИСК (КИБЕРСПОРТ / ТЕННИС / БАСКЕТ):\n{s2}\n\n"
+        f"Проанализируй ВЕСЬ спорт и киберспорт мира (футбол, хоккей, баскетбол, теннис, волейбол, наст. теннис, CS2, Dota 2 и др.) "
         f"с началом в ближайшие 16 часов от {t_str}, которых НЕТ в {list(taken)}.\n"
         f"Используй ВСЮ роспись: П1/Х/П2, Форы, Общие тоталы (ТБ/ТМ), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (ОЗ Да/Нет), тоталы карт/сетов.\n"
         f"Выдай ВСЕ топовые матчи с перевесом +EV >= 5.0% (обратки 1.80-3.50 и валуи по статистике/xG/форме). "
