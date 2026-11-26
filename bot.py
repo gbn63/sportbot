@@ -50,17 +50,11 @@ def sport_emoji(league_str):
     if "кибер" in s or "cs2" in s or "dota" in s: return "🎮"
     return "🏆"
 
-def fonbet_link(match_name, league_str=""):
+def fonbet_link(match_name):
     parts = match_name.split("—") if "—" in match_name else match_name.split("-")
-    first = next(iter(parts)).strip()
-    words = [w for w in first.split() if w.upper() not in ("ФК", "ХК", "БК", "ВК", "МФК", "ПФК", "FC", "HC")]
-    if any(x in league_str.lower() for x in ("теннис", "tennis")) and len(words) > 1:
-        q_raw = words[-1]
-    else:
-        q_raw = words[0] if words else first
-    q = quote(q_raw)
+    q = quote(next(iter(parts)).strip())
     fb = ".".join(["fon", "bet"])
-    return f"https://{fb}/sports/?search={q}", q_raw
+    return f"https://{fb}/sports/?search={q}"
 def get_pinnacle_feed():
     now_ts, total_found, balanced, raw_odds = NOW_TLT.timestamp(), 0, [], {}
     pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
@@ -174,9 +168,9 @@ def ask_ai(prompt):
         except Exception:
             pass
     return ""
+
 def calc_ev(prob, odds):
     return round(float(np.mean(np.where(np.random.default_rng().random(100_000) < prob, odds - 1.0, -1.0))) * 100, 2)
-
 def get_all_live_scores():
     espn, out = ".".join(["site", "api", "espn", "com"]), []
     paths = ["soccer/all/scoreboard", "football/nfl/scoreboard", "hockey/nhl/scoreboard", "basketball/nba/scoreboard", "tennis/atp/scoreboard", "tennis/wta/scoreboard"]
@@ -217,14 +211,13 @@ def check_prematch_alerts(history, raw_odds):
         st = datetime.datetime.fromisoformat(bet["start_iso"])
         mins_left = (st - NOW_TLT).total_seconds() / 60.0
         if 4 <= mins_left <= 18 and not bet.get("reminded_15"):
-            lg_str = bet.get("league", "")
-            ico = sport_emoji(lg_str)
-            link, q_copy = fonbet_link(bet["match"], lg_str)
+            ico = sport_emoji(bet.get("league", ""))
+            link = fonbet_link(bet["match"])
             msg = (
                 f"⏰ <b>СТАРТ ЧЕРЕЗ {int(mins_left)} МИНУТ</b>\n"
                 f"{ico} <b>{bet['match']}</b>\n"
                 f"✅ Исход: <b>{bet['pick']}</b> за <b>{bet['odds']}</b>\n"
-                f"🔗 <a href=\"{link}\">Открыть матч в Фонбете</a> (поиск: <code>{q_copy}</code>)"
+                f"🔗 <a href=\"{link}\">Открыть матч в Фонбете</a>"
             )
             if send_tg(msg):
                 bet["reminded_15"] = True
@@ -387,7 +380,7 @@ def find_matches(history, rules, mkt_txt):
             st = parse_start_dt(c.get("start_time", ""))
             lg_str = c.get("league", "")
             ico = sport_emoji(lg_str)
-            link, q_copy = fonbet_link(m_name, lg_str)
+            link = fonbet_link(m_name)
             history["bets"].append({"match": m_name, "orig_match": c.get("orig_match", ""), "league": lg_str, "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
             send_tg(
                 f"{ico} <b>{lg_str}</b>\n"
@@ -397,7 +390,7 @@ def find_matches(history, rules, mkt_txt):
                 f"📈 Кэф в линии: <b>{odds:.2f}</b> <i>(честный: {fair_odds:.2f} | в Фонбете от {min_odds:.2f})</i>\n"
                 f"🔥 Перевес над линией: <b>+{ev:.1f}%</b> • Шанс захода: <b>{prob*100:.0f}%</b>\n"
                 f"⭐️ Надёжность: <b>{rel}</b>\n"
-                f"🔗 <a href=\"{link}\">Найти матч в Фонбете</a> (тап: <code>{q_copy}</code>)"
+                f"🔗 <a href=\"{link}\">Найти матч в Фонбете</a>"
             )
             taken.add(m_name)
             upd = True
