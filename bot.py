@@ -1,5 +1,4 @@
 import os, re, json, time, datetime, requests, warnings
-from urllib.parse import quote
 import numpy as np
 from ddgs import DDGS
 
@@ -49,12 +48,6 @@ def sport_emoji(league_str):
     if "волей" in s: return "🏐"
     if "кибер" in s or "cs2" in s or "dota" in s: return "🎮"
     return "🏆"
-
-def fonbet_link(match_name):
-    parts = match_name.split("—") if "—" in match_name else match_name.split("-")
-    q = quote(next(iter(parts)).strip())
-    fb = ".".join(["fon", "bet"])
-    return f"https://{fb}/sports/?search={q}"
 def get_pinnacle_feed():
     now_ts, total_found, balanced, raw_odds = NOW_TLT.timestamp(), 0, [], {}
     pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
@@ -205,24 +198,14 @@ def get_all_live_scores():
 
 def check_prematch_alerts(history, raw_odds):
     sent = False
+    if not raw_odds:
+        return False
     for bet in history["bets"]:
-        if bet["status"] != "PENDING":
+        if bet["status"] != "PENDING" or bet.get("steam_sent"):
             continue
         st = datetime.datetime.fromisoformat(bet["start_iso"])
         mins_left = (st - NOW_TLT).total_seconds() / 60.0
-        if 4 <= mins_left <= 18 and not bet.get("reminded_15"):
-            ico = sport_emoji(bet.get("league", ""))
-            link = fonbet_link(bet["match"])
-            msg = (
-                f"⏰ <b>СТАРТ ЧЕРЕЗ {int(mins_left)} МИНУТ</b>\n"
-                f"{ico} <b>{bet['match']}</b>\n"
-                f"✅ Исход: <b>{bet['pick']}</b> за <b>{bet['odds']}</b>\n"
-                f"🔗 <a href=\"{link}\">Открыть матч в Фонбете</a>"
-            )
-            if send_tg(msg):
-                bet["reminded_15"] = True
-                sent = True
-        if mins_left > 15 and not bet.get("steam_sent") and raw_odds:
+        if mins_left > 15:
             orig_name = bet.get("orig_match", "").lower()
             cur_min = raw_odds.get(orig_name, 0)
             if cur_min and bet["odds"] - cur_min >= 0.14:
@@ -244,14 +227,14 @@ def check_results(history, rules):
         if bet["status"] != "PENDING":
             continue
         st = datetime.datetime.fromisoformat(bet["start_iso"])
-        if (NOW_TLT - st).total_seconds() / 3600.0 < 3.6:
+        if (NOW_TLT - st).total_seconds() / 3600.0 < 2.1:
             continue
         info = web_search(f"{bet['match']} финальный счет результат FT Final {st.strftime('%d.%m.%Y')}")
         raw = ask_ai(
             f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {bet['match']}. Ставка: {bet['pick']} ({bet['odds']}).\n"
             f"Мировое табло:\n{live_board}\nПоиск:\n{info}\n\n"
             f"СТРОГОЕ ПРАВИЛО: Если матч ещё идёт в лайве или нет точного подтверждения окончания (Final / FT / Завершён) — верни status: PENDING!\n"
-            f"Верни JSON строго на русском: {{\"status\": \"WIN\"|\"LOSE\"|\"PENDING\", \"score\": \"Команда 1 Х : У Команда 2\", \"lesson\": \"если LOSE — 1 короткий вывод на русском для rules.txt, иначе пусто\"}}"
+            f"Верни JSON строго на русском: {{\"status\": \"WIN\"|\"LOSE\"|\"PENDING\", \"score\": \"Х : У\", \"lesson\": \"если LOSE — 1 короткий вывод на русском для rules.txt, иначе пусто\"}}"
         )
         try:
             res = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
@@ -264,8 +247,17 @@ def check_results(history, rules):
                     rules += f"\n- Вывод ({NOW_TLT.strftime('%d.%m')}): {res['lesson']}"
                 done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
                 wr = round(len([b for b in done if b["status"] == "WIN"]) / len(done) * 100, 1) if done else 0
-                extra = f"\n🧠 <i>Вывод в базу:</i> {res['lesson']}" if res["status"] == "LOSE" and res.get("lesson") else ""
-                send_tg(f"{'✅ ЗАХОД' if res['status']=='WIN' else '❌ МИНУС'} | <b>{bet['match']}</b>\nСчёт: <b>{bet['score']}</b> | Ставка: {bet['pick']} ({bet['odds']})\nИтог: <b>{prof:+.0f} ₽</b> | Банк: <b>{history['bank']:.0f} ₽</b> (Проход: {wr}%){extra}")
+                ico = sport_emoji(bet.get("league", ""))
+                head = "✅ <b>СТАВКА ЗАШЛА</b>" if res["status"] == "WIN" else "❌ <b>СТАВКА НЕ ЗАШЛА</b>"
+                extra = f"\n🧠 <i>Вывод:</i> {res['lesson']}" if res["status"] == "LOSE" and res.get("lesson") else ""
+                send_tg(
+                    f"{head}\n"
+                    f"{ico} <b>{bet['match']}</b>\n\n"
+                    f"📊 Итоговый счёт: <b>{bet['score']}</b>\n"
+                    f"🎯 Исход: <b>{bet['pick']} за {bet['odds']}</b>\n"
+                    f"💰 Итог: <b>{prof:+.0f} ₽</b> • Банк: <b>{history['bank']:.0f} ₽</b> <i>(проход {wr}%)</i>"
+                    f"{extra}"
+                )
                 upd = True
         except Exception:
             pass
@@ -273,7 +265,7 @@ def check_results(history, rules):
 
 def check_live(history):
     sent = False
-    active = [b for b in history["bets"] if b["status"] == "PENDING" and 5 <= (NOW_TLT - datetime.datetime.fromisoformat(b["start_iso"])).total_seconds() / 60.0 <= 240]
+    active = [b for b in history["bets"] if b["status"] == "PENDING" and 5 <= (NOW_TLT - datetime.datetime.fromisoformat(b["start_iso"])).total_seconds() / 60.0 <= 108]
     if not active:
         return False
     live_board = get_all_live_scores()
@@ -284,8 +276,8 @@ def check_live(history):
             f"Ты спортивный информатор. Матч {bet['match']} начался ~{mins} мин назад. Наша ставка: {bet['pick']} за {bet['odds']} (помни: (0) — это фора ноль, а не 0 голов!).\n"
             f"Мировое табло (HT = перерыв, Final/FT = конец):\n{live_board}\nПоиск:\n{info}\n\n"
             f"ПРАВИЛА:\n"
-            f"1. Если точного счёта нет, матч уже закончен (Final/FT) или счёт 0:0 без удалений — верни СТРОГО слово OK.\n"
-            f"2. Если забили гол (любая из команд!), изменился счёт или дали красную карточку/удаление — ОБЯЗАТЕЛЬНО сообщи!\n"
+            f"1. Если точного счёта нет, матч уже закончен (Final/FT/Завершён), идёт 90+ минута (добавленное время) или счёт 0:0 без удалений — верни СТРОГО слово OK.\n"
+            f"2. Сообщай ТОЛЬКО пока матч реально идёт в основное время (1-й или 2-й тайм до 89-й минуты) и изменился счёт или дали красную карточку/удаление.\n"
             f"3. НЕ давай никаких советов (никаких слов «Держать», «Продать», «Перекрыться»!). Пиши СТРОГО на русском языке. Минуту/тайм бери только из табло (если нет — не пиши).\n"
             f"Верни СТРОГО JSON: {{\"score\": \"Х : У\", \"time_info\": \"например: 2-й тайм, 68' или Перерыв (если неизвестно — пусто)\", \"status_text\": \"короткий статус ставки и событий на русском (напр. пока проходит, но команда в меньшинстве)\"}}"
         ).strip()
@@ -295,7 +287,8 @@ def check_live(history):
                 sc = str(data.get("score", "")).strip()
                 st_txt = str(data.get("status_text", "")).strip()
                 t_inf = str(data.get("time_info", "")).strip()
-                if not sc or not st_txt:
+                full_check = f"{t_inf} {st_txt}".lower()
+                if not sc or not st_txt or any(w in full_check for w in ["90+", "90'", "ft", "final", "заверш", "окончен", "выиграла", "проиграла", "итог"]):
                     continue
                 sig = ":".join(re.findall(r"\d+", sc)) + ("_RED" if "КРАСН" in st_txt.upper() or "УДАЛЕН" in st_txt.upper() or "МЕНЬШИНСТВ" in st_txt.upper() else "")
                 if sig and bet.get("last_sig") == sig:
@@ -380,7 +373,6 @@ def find_matches(history, rules, mkt_txt):
             st = parse_start_dt(c.get("start_time", ""))
             lg_str = c.get("league", "")
             ico = sport_emoji(lg_str)
-            link = fonbet_link(m_name)
             history["bets"].append({"match": m_name, "orig_match": c.get("orig_match", ""), "league": lg_str, "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
             send_tg(
                 f"{ico} <b>{lg_str}</b>\n"
@@ -389,8 +381,7 @@ def find_matches(history, rules, mkt_txt):
                 f"✅ Исход: <b>{c['pick']}</b>\n"
                 f"📈 Кэф в линии: <b>{odds:.2f}</b> <i>(честный: {fair_odds:.2f} | в Фонбете от {min_odds:.2f})</i>\n"
                 f"🔥 Перевес над линией: <b>+{ev:.1f}%</b> • Шанс захода: <b>{prob*100:.0f}%</b>\n"
-                f"⭐️ Надёжность: <b>{rel}</b>\n"
-                f"🔗 <a href=\"{link}\">Найти матч в Фонбете</a>"
+                f"⭐️ Надёжность: <b>{rel}</b>"
             )
             taken.add(m_name)
             upd = True
@@ -419,13 +410,11 @@ def main():
     history, rules, u1 = check_results(history, rules)
     live_sent = check_live(history)
     rep_sent = send_daily_report(history)
-    pre_sent = check_prematch_alerts(history, {})
     is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    u2 = False
+    u2, pre_sent = False, False
     if is_manual or (NOW_TLT.minute % 15 < 5):
         mkt_txt, raw_odds = get_all_sources()
-        if check_prematch_alerts(history, raw_odds):
-            pre_sent = True
+        pre_sent = check_prematch_alerts(history, raw_odds)
         history, u2 = find_matches(history, rules, mkt_txt)
     if u1 or u2 or live_sent or rep_sent or pre_sent:
         with open("history.json", "w", encoding="utf-8") as f:
