@@ -132,34 +132,53 @@ def get_all_sources():
 def ask_ai(prompt):
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if groq_key:
-        g_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1/chat/completions"
-        hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
-        for gm in ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]:
-            try:
-                r = requests.post(g_url, headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.25}, timeout=25)
-                if r.status_code == 200:
-                    choice = next(iter(r.json()["choices"]))
-                    txt = choice["message"]["content"]
-                    if len(txt) > 5:
-                        print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
-                        return txt
-                else:
-                    print(f"Groq {gm} HTTP {r.status_code}")
-            except Exception as e:
-                print(f"Groq {gm} err:", e)
-
-    for m in ["gemini-3.8-flash", "gemini-3.6-flash"]:
         try:
-            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.25}}, timeout=25)
-            if r.status_code == 200:
-                cand = next(iter(r.json()["candidates"]))
-                part = next(iter(cand["content"]["parts"]))
-                txt = part["text"]
-                if len(txt) > 5:
-                    print(f"ИИ ({m}) ответил: {len(txt)} симв.")
-                    return txt
-        except Exception:
-            pass
+            g_base = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1"
+            hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            mr = requests.get(f"{g_base}/models", headers=hdr, timeout=10)
+            if mr.status_code == 200:
+                bad = ("whisper", "tts", "guard", "orpheus", "embed", "vision", "safeguard")
+                models = [x["id"] for x in mr.json().get("data", []) if not any(b in x["id"].lower() for b in bad)]
+                models.sort(key=lambda s: (0 if "120b" in s else 1 if "70b" in s else 2 if any(k in s for k in ("32b", "27b", "20b")) else 3))
+                for gm in models:
+                    try:
+                        r = requests.post(f"{g_base}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.25}, timeout=25)
+                        if r.status_code == 200:
+                            txt = next(iter(r.json()["choices"]))["message"]["content"]
+                            if len(txt) > 5:
+                                print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
+                                return txt
+                    except Exception:
+                        continue
+        except Exception as e:
+            print("Groq list err:", e)
+
+    try:
+        mr = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=10)
+        if mr.status_code == 200:
+            skip = ("embed", "imagen", "veo", "aqa", "tts", "robotics", "computer", "research", "lite", "exp")
+            g_models = [
+                m["name"].replace("models/", "")
+                for m in mr.json().get("models", [])
+                if "generateContent" in m.get("supportedGenerationMethods", [])
+                and not any(s in m["name"].lower() for s in skip)
+            ]
+            g_models.sort(key=lambda s: (0 if "flash" in s else 1 if "pro" in s else 2, s), reverse=False)
+            for gm in g_models:
+                try:
+                    r = requests.post(f"{GEM_HOST}/v1beta/models/{gm}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.25}}, timeout=25)
+                    if r.status_code == 200:
+                        cand = next(iter(r.json()["candidates"]))
+                        txt = next(iter(cand["content"]["parts"]))["text"]
+                        if len(txt) > 5:
+                            print(f"ИИ (Google {gm}) ответил: {len(txt)} симв.")
+                            return txt
+                except Exception:
+                    continue
+    except Exception as e:
+        print("Google list err:", e)
+
+    print("Все модели Groq и Google временно исчерпали лимит.")
     return ""
 
 def calc_ev(prob, odds):
