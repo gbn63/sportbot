@@ -1,15 +1,13 @@
-import os, json, datetime, requests
+import os, json, datetime, requests, warnings
 import numpy as np
-from openai import OpenAI
 from duckduckgo_search import DDGS
+
+warnings.filterwarnings("ignore")
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
-
-client = OpenAI(base_url="https://googleapis.com", api_key=GEMINI_API_KEY)
-MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
 def send_tg(text):
     try:
@@ -24,11 +22,31 @@ def web_search(query, n=6):
     except Exception as e:
         return f"Search error: {e}"
 
+def get_gemini_models():
+    models = []
+    try:
+        r = requests.get(f"https://googleapis.com{GEMINI_API_KEY}", timeout=10)
+        for m in r.json().get("models", []):
+            name = m.get("name", "").replace("models/", "")
+            methods = m.get("supportedGenerationMethods", [])
+            if "flash" in name.lower() and "lite" not in name.lower() and "image" not in name.lower() and "generateContent" in methods:
+                models.append(name)
+    except Exception as e:
+        print("List models error:", e)
+    return models if models else ["gemini-2.5-flash", "gemini-2.0-flash"]
+
+ACTIVE_MODELS = get_gemini_models()
+
 def ask_ai(prompt):
-    for m in MODELS:
+    for m in ACTIVE_MODELS:
         try:
-            r = client.chat.completions.create(model=m, messages=[{"role": "user", "content": prompt}], temperature=0.2)
-            return r.choices[0].message.content
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
+            r = requests.post(url, json=payload, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            print(f"Model {m} HTTP {r.status_code}: {r.text[:120]}")
         except Exception as e:
             print(f"Model {m} error:", e)
     return ""
@@ -113,6 +131,7 @@ def find_matches(history, rules):
     return history, upd
 
 def main():
+    print("Доступные модели:", ACTIVE_MODELS)
     with open("history.json", "r", encoding="utf-8") as f:
         history = json.load(f)
     with open("rules.txt", "r", encoding="utf-8") as f:
