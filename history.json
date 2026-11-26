@@ -1,5 +1,5 @@
 {
-  "bank": 10000.0,
+  "bank": 10191.0,
   "bets": [
     {
       "match": "Чикаго Беарз — Детройт Лайонс",
@@ -11,8 +11,8 @@
       "prob": 0.525,
       "ev": 7.34,
       "stake_rub": 182.0,
-      "status": "PENDING",
-      "score": ""
+      "status": "WIN",
+      "score": "Chicago Bears 24 - Detroit Lions 31"
     },
     {
       "match": "Sparta Prague — AZ Alkmaar",
@@ -25,7 +25,8 @@
       "ev": 7.99,
       "stake_rub": 112.0,
       "status": "PENDING",
-      "score": ""
+      "score": "",
+      "last_live": "Счёт: Sparta Prague 1 - AZ Alkmaar 0  "
     },
     {
       "match": "Crystal Palace — Real Sociedad",
