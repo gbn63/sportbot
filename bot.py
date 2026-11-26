@@ -234,12 +234,16 @@ def check_results(history, rules):
             f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {bet['match']}. Ставка: {bet['pick']} ({bet['odds']}).\n"
             f"Мировое табло:\n{live_board}\nПоиск:\n{info}\n\n"
             f"СТРОГОЕ ПРАВИЛО: Если матч ещё идёт в лайве или нет точного подтверждения окончания (Final / FT / Завершён) — верни status: PENDING!\n"
-            f"Верни JSON строго на русском: {{\"status\": \"WIN\"|\"LOSE\"|\"PENDING\", \"score\": \"Х : У\", \"lesson\": \"если LOSE — 1 короткий вывод на русском для rules.txt, иначе пусто\"}}"
+            f"ПЕРЕВЕДИ НА РУССКИЙ названия команд (match_ru) и ставку (pick_ru).\n"
+            f"Верни JSON строго на русском: {{\"status\": \"WIN\"|\"LOSE\"|\"PENDING\", \"score\": \"Х : У\", \"match_ru\": \"Команда 1 — Команда 2\", \"pick_ru\": \"Ставка на русском\", \"lesson\": \"если LOSE — 1 короткий вывод для rules.txt, иначе пусто\"}}"
         )
         try:
             res = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
             if res["status"] in ("WIN", "LOSE"):
                 bet["status"], bet["score"] = res["status"], res.get("score", "")
+                m_ru = str(res.get("match_ru") or bet["match"]).strip()
+                p_ru = str(res.get("pick_ru") or bet["pick"]).strip()
+                bet["match"], bet["pick"] = m_ru, p_ru
                 stake = bet.get("stake_rub", 500)
                 prof = round(stake * (bet["odds"] - 1.0), 0) if res["status"] == "WIN" else -stake
                 history["bank"] = round(history["bank"] + prof, 0)
@@ -249,19 +253,20 @@ def check_results(history, rules):
                 wr = round(len([b for b in done if b["status"] == "WIN"]) / len(done) * 100, 1) if done else 0
                 ico = sport_emoji(bet.get("league", ""))
                 head = "✅ <b>СТАВКА ЗАШЛА</b>" if res["status"] == "WIN" else "❌ <b>СТАВКА НЕ ЗАШЛА</b>"
-                extra = f"\n🧠 <i>Вывод:</i> {res['lesson']}" if res["status"] == "LOSE" and res.get("lesson") else ""
+                bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
                 send_tg(
                     f"{head}\n"
-                    f"{ico} <b>{bet['match']}</b>\n\n"
+                    f"{ico} <b>{m_ru}</b>\n\n"
                     f"📊 Итоговый счёт: <b>{bet['score']}</b>\n"
-                    f"🎯 Исход: <b>{bet['pick']} за {bet['odds']}</b>\n"
-                    f"💰 Итог: <b>{prof:+.0f} ₽</b> • Банк: <b>{history['bank']:.0f} ₽</b> <i>(проход {wr}%)</i>"
-                    f"{extra}"
+                    f"🎯 Исход: <b>{p_ru} за {bet['odds']}</b>\n"
+                    f"💵 Результат: <b>{prof:+.0f} ₽</b>\n"
+                    f"🏦 Банк: <b>{bank_fmt} ₽</b> • Проход: <b>{wr}%</b>"
                 )
                 upd = True
         except Exception:
             pass
     return history, rules, upd
+
 
 def check_live(history):
     sent = False
