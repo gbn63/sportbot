@@ -6,28 +6,29 @@ import numpy as np
 from openai import OpenAI
 from duckduckgo_search import DDGS
 
-TG_TOKEN = os.environ["TG_TOKEN"]
-TG_CHAT_ID = os.environ["TG_CHAT_ID"]
-OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+CHAT_ID = os.environ["CHAT_ID"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
 TZ_TLT = datetime.timezone(datetime.timedelta(hours=4))
 NOW_TLT = datetime.datetime.now(TZ_TLT)
 
 client = OpenAI(
-    base_url="https://openrouter.ai",
-    api_key=OPENROUTER_API_KEY,
+    base_url="https://googleapis.com",
+    api_key=GEMINI_API_KEY,
 )
 
-FREE_MODELS = [
-    "openrouter/free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-chat:free",
-    "qwen/qwen-2.5-72b-instruct:free",
+GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
 ]
 
 def send_tg(text):
-    url = f"https://telegram.org{TG_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML"})
+    url = f"https://telegram.org{BOT_TOKEN}/sendMessage"
+    try:
+        requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+    except Exception as e:
+        print(f"Ошибка отправки в Telegram: {e}")
 
 def web_search(query, max_results=6):
     try:
@@ -38,7 +39,7 @@ def web_search(query, max_results=6):
         return f"Ошибка поиска: {e}"
 
 def ask_ai(prompt):
-    for model in FREE_MODELS:
+    for model in GEMINI_MODELS:
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -46,7 +47,8 @@ def ask_ai(prompt):
                 temperature=0.2,
             )
             return resp.choices[0].message.content
-        except Exception:
+        except Exception as e:
+            print(f"Ошибка модели {model}: {e}")
             continue
     return ""
 
@@ -57,6 +59,12 @@ def kelly_stake(prob, odds, bank):
     f = (prob * b - (1.0 - prob)) / b
     quarter_kelly = max(0.0, min(0.05, f * 0.25))
     return round(quarter_kelly * 100, 2), round(bank * quarter_kelly, 0)
+
+def monte_carlo_ev(prob, odds, simulations=100_000):
+    rng = np.random.default_rng()
+    outcomes = rng.random(simulations) < prob
+    profits = np.where(outcomes, odds - 1.0, -1.0)
+    return round(float(np.mean(profits)) * 100, 2)
 
 def load_data():
     with open("history.json", "r", encoding="utf-8") as f:
@@ -196,49 +204,41 @@ def find_new_matches(history, rules):
             continue
         odds = float(c["odds"])
         prob = float(c["prob"])
-        ev = round((prob * odds - 1.0) * 100, 1)
+        ev = monte_carlo_ev(prob, odds, simulations=100_000)
         if ev < 7.0:
             continue
-        fair_odds = round(1.0 / prob, 2)
-        min_odds = round(fair_odds * 1.04, 2)
-        pct, stake_rub = kelly_stake(prob, odds, history["bank"])
-        if stake_rub < 50:
+
+        stake_pct, stake_rub = kelly_stake(prob, odds, history["bank"])
+        if stake_rub <= 0:
             continue
 
-        hh, mm = map(int, c["start_time"].split(":"))
-        start_dt = NOW_TLT.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        if start_dt < NOW_TLT - datetime.timedelta(hours=2):
-            start_dt += datetime.timedelta(days=1)
+        try:
+            hh, mm = map(int, c["start_time"].split(":"))
+            start_dt = NOW_TLT.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if start_dt < NOW_TLT - datetime.timedelta(minutes=30):
+                start_dt += datetime.timedelta(days=1)
+        except Exception:
+            start_dt = NOW_TLT + datetime.timedelta(minutes=45)
 
-        history["bets"].append({
+        bet_entry = {
             "match": c["match"],
-            "league": c["league"],
+            "league": c.get("league", ""),
             "start_iso": start_dt.isoformat(),
+            "type": c.get("type", "Валуй"),
             "pick": c["pick"],
             "odds": odds,
+            "prob": prob,
+            "ev": ev,
             "stake_rub": stake_rub,
-            "status": "PENDING"
-        })
+            "status": "PENDING",
+            "score": ""
+        }
+        history["bets"].append(bet_entry)
 
         msg = (
-            f"🎯 <b>[{c['type']}] {c['league']}</b>\n"
-            f"🕒 Старт: <b>{c['start_time']} (Тольятти)</b>\n"
-            f"⚔️ <b>{c['match']}</b>\n"
-            f"📌 Ставка: <b>{c['pick']}</b> | Кэф: <b>{odds}</b> (мин. вход: {min_odds})\n"
-            f"📈 Честный кэф: {fair_odds} | Перевес: <b>+{ev}% EV</b>\n"
-            f"💰 Ставка: <b>{pct}% банка ({stake_rub:.0f} ₽)</b>\n\n"
-            f"📊 <b>Суть:</b> {c['reason']}\n"
-            f"⚡ <b>Лайв-план:</b> {c['live_plan']}\n"
-            f"⚠️ <b>Риск:</b> {c['risk']}"
-        )
-        send_tg(msg)
-        added = True
-    return history, added
-
-if __name__ == "__main__":
-    history, rules = load_data()
-    history, rules, u1 = check_results_and_learn(history, rules)
-    check_live_bets(history)
-    history, u2 = find_new_matches(history, rules)
-    if u1 or u2:
-        save_data(history, rules)
+            f"🎯 <b>СИГНАЛ ({bet_entry['type']}) | {bet_entry['league']}</b>\n"
+            f"⚽ <b>{bet_entry['match']}</b>\n"
+            f"⏰ Старт (Тольятти): <b>{start_dt.strftime('%H:%M')}</b>\n"
+            f"📌 Ставка: <b>{bet_entry['pick']}</b> | Кэф: <b>{odds:.2f}</b>\n"
+            f"📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n"
+            f"💰 Сумма (1/4 Келли): <b>{stake_rub:.0f} ₽</b> ({stake_pct}% банка)\n\n"
