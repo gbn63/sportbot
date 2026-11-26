@@ -13,6 +13,32 @@
       "stake_rub": 182.0,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Sparta Prague — AZ Alkmaar",
+      "league": "UEFA Europa League",
+      "start_iso": "2026-11-27T00:00:00+04:00",
+      "type": "Обратка",
+      "pick": "AZ Alkmaar (0)",
+      "odds": 2.69,
+      "prob": 0.4,
+      "ev": 7.99,
+      "stake_rub": 112.0,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Crystal Palace — Real Sociedad",
+      "league": "UEFA Europa League",
+      "start_iso": "2026-11-27T00:00:00+04:00",
+      "type": "Обратка",
+      "pick": "X2",
+      "odds": 1.95,
+      "prob": 0.54,
+      "ev": 5.02,
+      "stake_rub": 139.0,
+      "status": "PENDING",
+      "score": ""
     }
   ]
 }
