@@ -1,4 +1,5 @@
 import os, re, json, time, datetime, requests, warnings
+from urllib.parse import quote
 import numpy as np
 from ddgs import DDGS
 
@@ -15,7 +16,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0
 
 def send_tg(text):
     try:
-        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=15)
         if r.status_code != 200:
             print("TG HTTP:", r.status_code, r.text[:100])
             return False
@@ -37,58 +38,80 @@ def am_to_dec(p):
         return round(1.0 + p / 100.0, 2) if p > 0 else round(1.0 + 100.0 / abs(p), 2)
     except Exception:
         return 0.0
+
+def sport_emoji(league_str):
+    s = league_str.lower()
+    if "футбол" in s: return "⚽"
+    if "хоккей" in s: return "🏒"
+    if "баскет" in s: return "🏀"
+    if "наст" in s: return "🏓"
+    if "теннис" in s: return "🎾"
+    if "волей" in s: return "🏐"
+    if "кибер" in s or "cs2" in s or "dota" in s: return "🎮"
+    return "🏆"
+
+def fonbet_link(match_name):
+    parts = match_name.split("—") if "—" in match_name else match_name.split("-")
+    q = quote(next(iter(parts)).strip())
+    fb = ".".join(["fon", "bet"])
+    return f"https://{fb}/sports/?search={q}"
 def get_pinnacle_feed():
-    now_ts, total_found, balanced = NOW_TLT.timestamp(), 0, []
+    now_ts, total_found, balanced, raw_odds = NOW_TLT.timestamp(), 0, [], {}
     pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
     sports = [(29, "Футбол"), (19, "Хоккей"), (4, "Баскетбол"), (33, "Теннис"), (12, "Киберспорт"), (34, "Волейбол"), (32, "Наст. теннис")]
+    ban_words = ["women", "u18", "u19", "u20", "u21", "youth", "friendly", "reserves", "жен", "юниор", "товар", "молод"]
     for sid, sname in sports:
         try:
             rm = requests.get(f"https://{pin}/0.1/sports/{sid}/matchups?brandId=0", headers=HEADERS, timeout=8)
             rp = requests.get(f"https://{pin}/0.1/sports/{sid}/markets/straight?primaryOnly=true&withSpecials=false", headers=HEADERS, timeout=8)
             if rm.status_code != 200 or rp.status_code != 200:
                 continue
-            m_map = {}
+            m_map, pair_map = {}, {}
             for m in rm.json():
                 st_iso = (m.get("startTime") or "").replace("Z", "+00:00")
                 parts = m.get("participants", [])
-                if not st_iso or len(parts) < 2:
+                lg = m.get("league", {}).get("name", "")
+                if not st_iso or len(parts) < 2 or any(w in lg.lower() for w in ban_words):
                     continue
                 st_dt = datetime.datetime.fromisoformat(st_iso).astimezone(NOW_TLT.tzinfo)
                 if 5 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
                     home = next((x.get("name") for x in parts if x.get("alignment") == "home"), next(iter(parts)).get("name", ""))
                     away = next((x.get("name") for x in parts if x.get("alignment") == "away"), parts[-1].get("name", ""))
-                    lg = m.get("league", {}).get("name", "")
                     m_map[m["id"]] = f"[{st_dt.strftime('%d.%m %H:%M')}] {sname} ({lg}): {home} — {away}"
+                    pair_map[m["id"]] = f"{home} — {away}".lower()
             odds_map, good_map = {}, {}
             for mk in rp.json():
                 mid = mk.get("matchupId")
                 if mid not in m_map or mk.get("period") != 0:
                     continue
                 mtype = mk.get("type", "")
-                plist = []
+                plist, dec_vals = [], []
                 for pr in mk.get("prices", []):
                     dec = am_to_dec(pr.get("price", 0))
                     if dec > 1.01:
-                        if 1.65 <= dec <= 3.70:
+                        dec_vals.append(dec)
+                        if 1.60 <= dec <= 2.45:
                             good_map[mid] = True
                         pt = f"({pr['points']})" if "points" in pr else ""
                         plist.append(f"{pr.get('designation', '')}{pt}={dec}")
                 if plist:
                     odds_map.setdefault(mid, []).append(f"{mtype}:[{','.join(plist)}]")
+                    if mtype == "moneyline" and dec_vals:
+                        raw_odds[pair_map[mid]] = min(dec_vals)
             sp_lines = []
             for mid, title in m_map.items():
                 if mid in odds_map:
                     total_found += 1
                     if mid in good_map:
-                        sp_lines.append(f"{title} | {' ; '.join(odds_map[mid][:2])}")
+                        sp_lines.append(f"{title} | {' ; '.join(odds_map[mid][:3])}")
             balanced.extend(sp_lines[:4])
         except Exception:
             pass
-    print(f"Pinnacle (весь мир): найдено {total_found}, отобрано в анализ {len(balanced)}")
-    return "\n".join(balanced[:24])
+    print(f"Pinnacle (проф. спорт): найдено {total_found}, отобрано {len(balanced)}")
+    return "\n".join(balanced[:24]), raw_odds
 def get_all_sources():
     out = []
-    pin_txt = get_pinnacle_feed()
+    pin_txt, raw_odds = get_pinnacle_feed()
     if pin_txt:
         out.append("=== ЛИНИЯ PINNACLE (MONEYLINE=1X2, TOTAL=ТОТАЛ, SPREAD=ФОРА) ===\n" + pin_txt)
 
@@ -111,7 +134,7 @@ def get_all_sources():
     print(f"Polymarket: {len(pm_list)} рынков")
     if pm_list:
         out.append("=== POLYMARKET (ОРИЕНТИР ВЕРОЯТНОСТЕЙ) ===\n" + "\n".join(pm_list[:15]))
-    return "\n\n".join(out)
+    return "\n\n".join(out), raw_odds
 
 def ask_ai(prompt):
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
@@ -145,9 +168,9 @@ def ask_ai(prompt):
         except Exception:
             pass
     return ""
+
 def calc_ev(prob, odds):
     return round(float(np.mean(np.where(np.random.default_rng().random(100_000) < prob, odds - 1.0, -1.0))) * 100, 2)
-
 def get_all_live_scores():
     espn, out = ".".join(["site", "api", "espn", "com"]), []
     paths = ["soccer/all/scoreboard", "football/nfl/scoreboard", "hockey/nhl/scoreboard", "basketball/nba/scoreboard", "tennis/atp/scoreboard", "tennis/wta/scoreboard"]
@@ -160,9 +183,13 @@ def get_all_live_scores():
                     st_det = st_obj.get("type", {}).get("shortDetail", "")
                     clk = st_obj.get("displayClock", "")
                     comp = next(iter(ev.get("competitions", [])), {})
-                    sc = " : ".join([f"{c.get('team', {}).get('displayName', '')} ({c.get('score', '0')})" for c in comp.get("competitors", [])])
-                    if sc:
-                        out.append(f"{sc} | Статус: {st_det} {clk}".strip())
+                    cards = []
+                    for c in comp.get("competitors", []):
+                        rc = c.get("redCards", 0)
+                        c_txt = f" (Красных: {rc})" if rc else ""
+                        cards.append(f"{c.get('team', {}).get('displayName', '')} ({c.get('score', '0')}){c_txt}")
+                    if cards:
+                        out.append(f"{' : '.join(cards)} | Статус: {st_det} {clk}".strip())
         except Exception:
             pass
     try:
@@ -175,6 +202,41 @@ def get_all_live_scores():
     except Exception:
         pass
     return "\n".join(out)
+
+def check_prematch_alerts(history, raw_odds):
+    sent = False
+    for bet in history["bets"]:
+        if bet["status"] != "PENDING":
+            continue
+        st = datetime.datetime.fromisoformat(bet["start_iso"])
+        mins_left = (st - NOW_TLT).total_seconds() / 60.0
+        if 4 <= mins_left <= 18 and not bet.get("reminded_15"):
+            ico = sport_emoji(bet.get("league", ""))
+            link = fonbet_link(bet["match"])
+            msg = (
+                f"⏰ <b>СТАРТ ЧЕРЕЗ {int(mins_left)} МИНУТ</b>\n"
+                f"{ico} <b>{bet['match']}</b>\n"
+                f"✅ Исход: <b>{bet['pick']}</b> за <b>{bet['odds']}</b>\n"
+                f"🔗 <a href=\"{link}\">Открыть матч в Фонбете</a>"
+            )
+            if send_tg(msg):
+                bet["reminded_15"] = True
+                sent = True
+        if mins_left > 15 and not bet.get("steam_sent") and raw_odds:
+            orig_name = bet.get("orig_match", "").lower()
+            cur_min = raw_odds.get(orig_name, 0)
+            if cur_min and bet["odds"] - cur_min >= 0.14:
+                ico = sport_emoji(bet.get("league", ""))
+                msg = (
+                    f"🔥 <b>ПРОГРУЗ ЛИНИИ</b>\n"
+                    f"{ico} <b>{bet['match']}</b>\n"
+                    f"📉 Кэф в Pinnacle просел: <b>{bet['odds']} → {cur_min}</b>\n"
+                    f"✅ Наш исход: <b>{bet['pick']}</b>"
+                )
+                if send_tg(msg):
+                    bet["steam_sent"] = True
+                    sent = True
+    return sent
 def check_results(history, rules):
     upd = False
     live_board = get_all_live_scores()
@@ -211,33 +273,49 @@ def check_results(history, rules):
 
 def check_live(history):
     sent = False
-    active = [b for b in history["bets"] if b["status"] == "PENDING" and not b.get("closed_live") and 5 <= (NOW_TLT - datetime.datetime.fromisoformat(b["start_iso"])).total_seconds() / 60.0 <= 160]
+    active = [b for b in history["bets"] if b["status"] == "PENDING" and 5 <= (NOW_TLT - datetime.datetime.fromisoformat(b["start_iso"])).total_seconds() / 60.0 <= 240]
     if not active:
         return False
     live_board = get_all_live_scores()
     for bet in active:
         mins = int((NOW_TLT - datetime.datetime.fromisoformat(bet["start_iso"])).total_seconds() / 60.0)
-        info = web_search(f"{bet['match']} live счет статистика score")
+        info = web_search(f"{bet['match']} live счет гол удаление красная карточка score")
         adv = ask_ai(
-            f"Ты опытный спортивный аналитик. Матч {bet['match']} начался ~{mins} мин назад (учитывай перерыв 15 мин!). Ставка: {bet['pick']} за {bet['odds']}.\n"
+            f"Ты спортивный информатор. Матч {bet['match']} начался ~{mins} мин назад. Наша ставка: {bet['pick']} за {bet['odds']} (помни: (0) — это фора ноль, а не 0 голов!).\n"
             f"Мировое табло (HT = перерыв, Final/FT = конец):\n{live_board}\nПоиск:\n{info}\n\n"
             f"ПРАВИЛА:\n"
-            f"1. Если точного счёта нет, матч уже закончен (Final/FT) или всё идёт по плану — верни СТРОГО слово OK.\n"
-            f"2. Пиши СТРОГО на русском языке. Не выдумывай минуту матча из времени старта — бери минуту/тайм/перерыв только из табло или не пиши минуту вообще.\n"
-            f"3. Если события идут против ставки — ответь в 3 строки:\n"
-            f"Счёт: [Команда 1 Х : У Команда 2]\nДействие: [ДЕРЖАТЬ / ПРОДАТЬ / ПЕРЕКРЫТЬСЯ]\nПричина: [1-2 живых предложения на русском по ходу игры]"
+            f"1. Если точного счёта нет, матч уже закончен (Final/FT) или счёт 0:0 без удалений — верни СТРОГО слово OK.\n"
+            f"2. Если забили гол (любая из команд!), изменился счёт или дали красную карточку/удаление — ОБЯЗАТЕЛЬНО сообщи!\n"
+            f"3. НЕ давай никаких советов (никаких слов «Держать», «Продать», «Перекрыться»!). Пиши СТРОГО на русском языке. Минуту/тайм бери только из табло (если нет — не пиши).\n"
+            f"Верни СТРОГО JSON: {{\"score\": \"Х : У\", \"time_info\": \"например: 2-й тайм, 68' или Перерыв (если неизвестно — пусто)\", \"status_text\": \"короткий статус ставки и событий на русском (напр. пока проходит, но команда в меньшинстве)\"}}"
         ).strip()
         if adv and "OK" not in adv[:15].upper():
-            first_line = next(iter(adv.splitlines()), "")
-            nums = ":".join(re.findall(r"\d+", first_line))
-            if nums and bet.get("last_nums") == nums:
-                continue
-            if send_tg(f"⚡ <b>ЛАЙВ: {bet['match']}</b>\n{adv}"):
-                if nums:
-                    bet["last_nums"] = nums
-                if "ПРОДАТЬ" in adv.upper():
-                    bet["closed_live"] = True
-                sent = True
+            try:
+                data = json.loads(adv[adv.find("{"):adv.rfind("}")+1])
+                sc = str(data.get("score", "")).strip()
+                st_txt = str(data.get("status_text", "")).strip()
+                t_inf = str(data.get("time_info", "")).strip()
+                if not sc or not st_txt:
+                    continue
+                sig = ":".join(re.findall(r"\d+", sc)) + ("_RED" if "КРАСН" in st_txt.upper() or "УДАЛЕН" in st_txt.upper() or "МЕНЬШИНСТВ" in st_txt.upper() else "")
+                if sig and bet.get("last_sig") == sig:
+                    continue
+                lg = bet.get("league", "")
+                sp_name = next(iter(lg.split("•"))).strip() if "•" in lg else (lg or "Спорт")
+                ico = sport_emoji(lg)
+                t_str = f" <i>({t_inf})</i>" if t_inf else ""
+                msg = (
+                    f"⏱ <b>МОНИТОРИНГ МАТЧА • {sp_name}</b>\n"
+                    f"🆚 <b>{bet['match']}</b>\n\n"
+                    f"📊 Счёт сейчас: <b>{sc}</b>{t_str}\n"
+                    f"{ico} Ставка: <b>{bet['pick']} за {bet['odds']}</b> — <b>{st_txt}</b>"
+                )
+                if send_tg(msg):
+                    if sig:
+                        bet["last_sig"] = sig
+                    sent = True
+            except Exception:
+                pass
     return sent
 def parse_start_dt(dt_str):
     txt = str(dt_str).strip()
@@ -252,22 +330,25 @@ def parse_start_dt(dt_str):
             return st
     return NOW_TLT + datetime.timedelta(minutes=60)
 
-def find_matches(history, rules):
+def find_matches(history, rules, mkt_txt):
     taken = {b["match"] for b in history["bets"]}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
     tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
-    mkt = get_all_sources()
     s1 = web_search(f"прогнозы обе забьют индивидуальный тотал ТБ ТМ {d_str} {tom_str} футбол хоккей КХЛ НХЛ")
-    s2 = web_search(f"CS2 Dota 2 баскетбол теннис волейбол прогнозы коэффициенты {d_str} {tom_str}")
+    s2 = web_search(f"CS2 Dota 2 баскетбол теннис волейбол прогнозы тотал фора {d_str} {tom_str}")
     prompt = (
-        f"Ты опытный профессиональный аналитик ставок. Пиши СТРОГО на русском языке.\n"
-        f"Текущее время: {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\n"
+        f"Ты опытный квантовый аналитик ставок. Пиши СТРОГО на русском языке.\n"
+        f"Текущее время: {d_str} {t_str}. Правила:\n{rules}\n\n{mkt_txt}\n\n"
         f"НОВОСТИ И ПРОГНОЗЫ:\n{s1}\n{s2}\n\n"
-        f"Найди 2–5 лучших ставок (валуи или «обратки» на кэфах 1.70–3.60) с математическим перевесом от 2.0% на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}).\n"
-        f"СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:\n"
-        f"1. Бери ТОЛЬКО реальные рынки и кэфы из данных выше — не выдумывай угловые/карточки, если их нет в линии.\n"
-        f"2. ПЕРЕВЕДИ НА РУССКИЙ ВСЁ: названия команд/игроков (напр. «Кипр — Люксембург»), название вида спорта и лиги (напр. «Футбол | Товарищеские матчи (женщины)», «Киберспорт CS2 | ESL»), и саму ставку (напр. «П1», «П2», «Ф2 (+1.5)», «ТБ (2.5)», «Обе забьют — Нет», «ИТБ1 (1.5)»). Никаких английских слов!\n"
-        f"Верни СТРОГО JSON-массив: [{{\"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта | Лига на русском\", \"start_time\": \"ДД.ММ ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Ставка на русском\", \"odds\": 1.95, \"prob\": 0.54}}]."
+        f"Найди 2–5 лучших ставок по гибкой математической модели на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}):\n"
+        f"• Для кэфов 1.60–2.05: реальный шанс захода строго от 54% и выше.\n"
+        f"• Для кэфов 2.06–2.45: реальный шанс захода от 48% и выше (сильные обратки и ничьи с перевесом от +5%).\n"
+        f"СТРОГИЕ ПРАВИЛА:\n"
+        f"1. ЗАПРЕЩЕНО брать женские, товарищеские и молодёжные/юниорские (U18/U20/U21) матчи. Только взрослый профессиональный спорт!\n"
+        f"2. Обязательно ищи в линии Pinnacle и прогнозах Тоталы (ТБ/ТМ), Форы (Ф1/Ф2), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (Да/Нет), а не только П1/П2.\n"
+        f"3. Оценивай вероятность консервативно (учитывай маржу Pinnacle ~2% как эталон честной линии).\n"
+        f"4. ПЕРЕВЕДИ НА РУССКИЙ ВСЁ: команды, вид спорта и лигу, ставку (без английских слов). В поле orig_match укажи точное название матча из линии Pinnacle на английском.\n"
+        f"Верни СТРОГО JSON-массив: [{{\"match\": \"Команда 1 — Команда 2\", \"orig_match\": \"Team 1 — Team 2\", \"league\": \"Вид спорта • Лига\", \"start_time\": \"ДД.ММ ЧЧ:ММ\", \"type\": \"Валуй или Обратка\", \"pick\": \"Ставка на русском\", \"odds\": 1.88, \"prob\": 0.58}}]."
     )
     raw = ask_ai(prompt)
     try:
@@ -281,23 +362,35 @@ def find_matches(history, rules):
             m_name = str(c.get("match", "")).strip()
             if not m_name or m_name in taken:
                 continue
-            odds, prob = float(c["odds"]), float(c["prob"])
-            ev = calc_ev(prob, odds)
-            print(f"Кандидат ИИ: {m_name} | {c.get('pick')} @ {odds} | prob={prob} -> перевес={ev}%")
-            if ev < 2.0:
+            odds, raw_prob = float(c["odds"]), float(c["prob"])
+            if not (1.58 <= odds <= 2.45):
                 continue
-            min_odds = round(1.02 / prob, 2) if prob > 0 else odds
-            edge_odds = round(odds - min_odds, 2)
+            mkt_prob = 1.0 / odds
+            prob = round(raw_prob * 0.75 + mkt_prob * 0.25, 3)
+            ev = calc_ev(prob, odds)
+            ok_low = (odds <= 2.05 and prob >= 0.54 and ev >= 2.0)
+            ok_high = (odds > 2.05 and prob >= 0.48 and ev >= 5.0)
+            if not (ok_low or ok_high):
+                print(f"Отсеян гибким фильтром: {m_name} @ {odds} (сглаж. шанс {prob*100:.1f}%, перевес {ev}%)")
+                continue
+            print(f"Принят моделью: {m_name} | {c.get('pick')} @ {odds} | шанс={prob*100:.1f}% -> перевес={ev}%")
+            fair_odds = round(1.0 / prob, 2)
+            min_odds = round(1.03 / prob, 2)
+            rel = "Высокая (3/3)" if (ev >= 6.0 and prob >= 0.55) else "Хорошая (2/3)"
             st = parse_start_dt(c.get("start_time", ""))
-            stake = 500
-            history["bets"].append({"match": m_name, "league": c.get("league", ""), "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": stake, "status": "PENDING", "score": ""})
+            lg_str = c.get("league", "")
+            ico = sport_emoji(lg_str)
+            link = fonbet_link(m_name)
+            history["bets"].append({"match": m_name, "orig_match": c.get("orig_match", ""), "league": lg_str, "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
             send_tg(
-                f"🎯 <b>{c.get('type', 'Валуй').upper()} | {c.get('league', '')}</b>\n"
-                f"🏆 <b>{m_name}</b>\n"
-                f"⏰ Начало: <b>{st.strftime('%d.%m.%Y %H:%M')}</b>\n"
-                f"📌 Ставка: <b>{c['pick']}</b> за <b>{odds:.2f}</b>\n"
-                f"📊 Перевес в кэфе Фонбета: <b>+{edge_odds:.2f}</b> (брать от <b>{min_odds:.2f}</b>) | Шанс: <b>{prob*100:.1f}%</b>\n"
-                f"💰 Сумма: <b>{stake} ₽</b>"
+                f"{ico} <b>{lg_str}</b>\n"
+                f"🆚 <b>{m_name}</b>\n"
+                f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}\n\n"
+                f"✅ Исход: <b>{c['pick']}</b>\n"
+                f"📈 Кэф в линии: <b>{odds:.2f}</b> <i>(честный: {fair_odds:.2f} | в Фонбете от {min_odds:.2f})</i>\n"
+                f"🔥 Перевес над линией: <b>+{ev:.1f}%</b> • Шанс захода: <b>{prob*100:.0f}%</b>\n"
+                f"⭐️ Надёжность: <b>{rel}</b>\n"
+                f"🔗 <a href=\"{link}\">Найти матч в Фонбете</a>"
             )
             taken.add(m_name)
             upd = True
@@ -326,17 +419,21 @@ def main():
     history, rules, u1 = check_results(history, rules)
     live_sent = check_live(history)
     rep_sent = send_daily_report(history)
+    pre_sent = check_prematch_alerts(history, {})
     is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
     u2 = False
     if is_manual or (NOW_TLT.minute % 15 < 5):
-        history, u2 = find_matches(history, rules)
-    if u1 or u2 or live_sent or rep_sent:
+        mkt_txt, raw_odds = get_all_sources()
+        if check_prematch_alerts(history, raw_odds):
+            pre_sent = True
+        history, u2 = find_matches(history, rules, mkt_txt)
+    if u1 or u2 or live_sent or rep_sent or pre_sent:
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
-    if is_manual and not (u1 or u2 or live_sent):
-        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%d.%m.%Y %H:%M')})</b>\nВсе источники опрошены. Новых матчей с перевесом пока нет.")
+    if is_manual and not (u1 or u2 or live_sent or pre_sent):
+        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%d.%m.%Y %H:%M')})</b>\nВсе источники опрошены. Новых матчей с высоким шансом и перевесом пока нет.")
     print(f"Готово ({NOW_TLT.strftime('%d.%m.%Y %H:%M')}). Лайв: {live_sent}, Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
