@@ -172,11 +172,12 @@ def check_live(history):
             continue
         mins = (NOW_TLT - datetime.datetime.fromisoformat(bet["start_iso"])).total_seconds() / 60.0
         if 10 <= mins <= 135:
-            info = web_search(f"{bet['match']} live счет статистика сейчас")
-            adv = ask_ai(f"Матч {bet['match']} в лайве (~{int(mins)} мин). Ставка: {bet['pick']} ({bet['odds']}). Данные:\n{info}\nЕсли по плану — верни OK. Если против — совет в 3 строки: ДЕРЖАТЬ, ПРОДАТЬ или ПЕРЕКРЫТЬСЯ.").strip()
-            if adv and "OK" not in adv[:10].upper() and send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
+            info = web_search(f"{bet['match']} live счет статистика сейчас score")
+            adv = ask_ai(f"Матч {bet['match']} в лайве (~{int(mins)} мин). Ставка: {bet['pick']} ({bet['odds']}). Данные:\n{info}\nЕсли данных о текущем счёте нет или всё идёт по плану — верни СТРОГО слово OK. Только если есть реальный счёт и он против плана — дай совет в 3 строки: ДЕРЖАТЬ, ПРОДАТЬ или ПЕРЕКРЫТЬСЯ.").strip()
+            if adv and "OK" not in adv[:15].upper() and send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
                 sent = True
     return sent
+
 
 def find_matches(history, rules):
     taken = {b["match"] for b in history["bets"]}
