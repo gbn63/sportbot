@@ -25,12 +25,13 @@ def send_tg(text):
         print("TG error:", e)
         return False
 
-def web_search(q, n=5):
+def web_search(q, n=8):
     try:
         with DDGS() as d:
-            return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, max_results=n)])
+            return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, timelimit="d", max_results=n)])
     except Exception as e:
         return f"Search err: {e}"
+
 def get_market_data():
     now_ts, out = NOW_TLT.timestamp(), []
     try:
@@ -72,7 +73,7 @@ def get_market_data():
                 if not dt_iso:
                     continue
                 st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
-                if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 240:
+                if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 720:
                     comp = next(iter(ev.get("competitions", [])), {})
                     odds_txt = f" | Линия: {comp['odds'].get('details', '')}" if comp.get("odds") else ""
                     line = f"[{st_dt.strftime('%H:%M')}] {title}: {ev.get('name', '')}{odds_txt}"
@@ -182,31 +183,41 @@ def check_live(history):
 def find_matches(history, rules):
     taken = {b["match"] for b in history["bets"]}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
+    tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
     mkt = get_market_data()
-    s1 = web_search(f"расписание прогнозы коэффициенты сегодня {d_str} КХЛ футбол Лига Европы Dota 2 CS2 hltv")
-    prompt = f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\nПОИСК (КХЛ/Европа/Киберспорт):\n{s1}\n\nНайди 1-2 лучших матча через 15-240 мин от {t_str}, которых НЕТ в {list(taken)}. Ищи перевес +EV >= 7% с поправкой на маржу Фонбета (особенно обратки на кэфах 1.80-3.50 и валуи по Polymarket/ESPN). Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Ставка\", \"odds\": 2.15, \"prob\": 0.54, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}] или []."
+    s1 = web_search(f"прогнозы коэффициенты футбол сегодня завтра {d_str} {tom_str} Лига Европы АПЛ Серия А")
+    s2 = web_search(f"прогнозы коэффициенты хоккей КХЛ НХЛ {d_str} {tom_str}")
+    s3 = web_search(f"Dota 2 CS2 матчи расписание коэффициенты {d_str} {tom_str} hltv")
+    prompt = (
+        f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\n"
+        f"ПОИСК ФУТБОЛ:\n{s1}\n\nПОИСК ХОККЕЙ:\n{s2}\n\nПОИСК КИБЕРСПОРТ:\n{s3}\n\n"
+        f"Найди ВСЕ хорошие матчи с началом в ближайшие 12 часов от {t_str} (футбол, КХЛ, НХЛ, баскетбол, теннис, Dota 2, CS2), "
+        f"которых НЕТ в {list(taken)}. Отбирай все матчи с перевесом +EV >= 5.0% (особенно обратки на кэфах 1.80-3.50 и валуи). "
+        f"Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Ставка\", \"odds\": 2.15, \"prob\": 0.53, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}] или []."
+    )
     raw = ask_ai(prompt)
     try:
         cands = json.loads(raw[raw.find("["):raw.rfind("]")+1])
     except Exception:
         return history, False
     upd = False
-    for c in cands[:2]:
+    for c in cands:
         if c["match"] in taken:
             continue
         odds, prob = float(c["odds"]), float(c["prob"])
         ev, pct, rub = calc_stats(prob, odds, history["bank"])
-        if ev < 7.0 or rub <= 0:
+        if ev < 5.0 or rub <= 0:
             continue
         min_odds = round(1.05 / prob, 2) if prob > 0 else odds
         parts = str(c.get("start_time", "")).split(":")
-        st = NOW_TLT.replace(hour=int(parts), minute=int(parts), second=0, microsecond=0) if len(parts) == 2 and parts.isdigit() and parts.isdigit() else NOW_TLT + datetime.timedelta(minutes=45)
+        st = NOW_TLT.replace(hour=int(parts[0]), minute=int(parts[1]), second=0, microsecond=0) if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit() else NOW_TLT + datetime.timedelta(minutes=60)
         if st < NOW_TLT - datetime.timedelta(minutes=30):
             st += datetime.timedelta(days=1)
         history["bets"].append({"match": c["match"], "league": c.get("league", ""), "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": rub, "status": "PENDING", "score": ""})
         send_tg(f"🎯 <b>СИГНАЛ ({c.get('type', 'Валуй')}) | {c.get('league', '')}</b>\n⚽ <b>{c['match']}</b>\n⏰ Старт (ТЛТ): <b>{st.strftime('%H:%M')}</b>\n📌 Ставка: <b>{c['pick']}</b> | Ориентир кэфа: <b>{odds:.2f}</b> (мин. в Фонбете: <b>{min_odds:.2f}</b>)\n📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n💰 Сумма (1/4 Келли): <b>{rub:.0f} ₽</b> ({pct}% банка)\n\n💡 <i>Суть:</i> {c.get('reason', '')}\n⚡ <i>Лайв-план:</i> {c.get('live_plan', '')}\n⚠️ <i>Риск:</i> {c.get('risk', '')}")
         upd = True
     return history, upd
+
 
 
 def main():
@@ -223,7 +234,7 @@ def main():
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
     if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and not (u1 or u2 or live_sent):
-        send_tg(f"🤖 <b>Система 5.0 на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nСвязь с каналом и ИИ работает штатно. Подходящих матчей с +EV ≥ 7% в ближайшие 2 часа не найдено.")
+        send_tg(f"🤖 <b>Система 5.0 на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nСвязь с каналом и ИИ работает штатно. Подходящих матчей с +EV ≥ 5% в ближайшие 12 часов не найдено.")
     print(f"Готово ({NOW_TLT.strftime('%H:%M')} ТЛТ). Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
