@@ -24,7 +24,7 @@ def send_tg(text):
         print("TG err:", e)
         return False
 
-def web_search(q, n=6):
+def web_search(q, n=5):
     try:
         with DDGS() as d:
             return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, timelimit="d", max_results=n)])
@@ -39,7 +39,7 @@ def am_to_dec(p):
         return 0.0
 
 def get_pinnacle_feed():
-    now_ts, out = NOW_TLT.timestamp(), []
+    now_ts, total_found, balanced = NOW_TLT.timestamp(), 0, []
     pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
     sports = [(29, "Футбол"), (19, "Хоккей"), (4, "Баскетбол"), (33, "Теннис"), (12, "Киберспорт"), (34, "Волейбол"), (32, "Наст.теннис")]
     for sid, sname in sports:
@@ -60,7 +60,7 @@ def get_pinnacle_feed():
                     away = next((x.get("name") for x in parts if x.get("alignment") == "away"), parts[-1].get("name", ""))
                     lg = m.get("league", {}).get("name", "")
                     m_map[m["id"]] = f"[{st_dt.strftime('%d.%m %H:%M')}] {sname} ({lg}): {home} — {away}"
-            odds_map = {}
+            odds_map, good_map = {}, {}
             for mk in rp.json():
                 mid = mk.get("matchupId")
                 if mid not in m_map or mk.get("period") != 0:
@@ -70,27 +70,33 @@ def get_pinnacle_feed():
                 for pr in mk.get("prices", []):
                     dec = am_to_dec(pr.get("price", 0))
                     if dec > 1.01:
+                        if 1.65 <= dec <= 3.70:
+                            good_map[mid] = True
                         pt = f"({pr['points']})" if "points" in pr else ""
                         plist.append(f"{pr.get('designation', '')}{pt}={dec}")
                 if plist:
                     odds_map.setdefault(mid, []).append(f"{mtype}:[{','.join(plist)}]")
+            sp_lines = []
             for mid, title in m_map.items():
                 if mid in odds_map:
-                    out.append(f"{title} | {' ; '.join(odds_map[mid][:2])}")
+                    total_found += 1
+                    if mid in good_map:
+                        sp_lines.append(f"{title} | {' ; '.join(odds_map[mid][:2])}")
+            balanced.extend(sp_lines[:4])
         except Exception:
             pass
-    print(f"Pinnacle (весь мир): {len(out)} матчей с кэфами")
-    return "\n".join(out[:35])
+    print(f"Pinnacle (весь мир): найдено {total_found}, отобрано в анализ {len(balanced)}")
+    return "\n".join(balanced[:24])
 def get_all_sources():
     now_ts, out = NOW_TLT.timestamp(), []
     pin_txt = get_pinnacle_feed()
     if pin_txt:
-        out.append("=== ЛИНИЯ PINNACLE (MONEYLINE=1X2, TOTAL=ТОТАЛ, SPREAD=ФОРА) ===\n" + pin_txt)
+        out.append("=== ОТОБРАННАЯ ЛИНИЯ PINNACLE (MONEYLINE=1X2, TOTAL=ТОТАЛ, SPREAD=ФОРА) ===\n" + pin_txt)
 
     pm_list, pm_host = [], ".".join(["gamma-api", "polymarket", "com"])
     for tag in ["sports", "esports"]:
         try:
-            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=30", headers=HEADERS, timeout=10)
+            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=25", headers=HEADERS, timeout=10)
             if r.status_code == 200:
                 for ev in r.json():
                     for m in ev.get("markets", [])[:2]:
@@ -105,7 +111,7 @@ def get_all_sources():
             pass
     print(f"Polymarket: {len(pm_list)} рынков")
     if pm_list:
-        out.append("=== POLYMARKET ===\n" + "\n".join(pm_list[:18]))
+        out.append("=== POLYMARKET ===\n" + "\n".join(pm_list[:15]))
 
     odds_key = os.environ.get("ODDS_API_KEY", "").strip()
     if odds_key and ((NOW_TLT.hour * 60 + NOW_TLT.minute) % 120 < 5 or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"):
@@ -131,7 +137,7 @@ def get_all_sources():
                         bk_list.append(f"[{st_dt.strftime('%d.%m %H:%M')}] {ev.get('sport_title', '')}: {ev.get('home_team', '')} — {ev.get('away_team', '')} | {' ; '.join(mkt_strs)}")
                 print(f"Odds API (1Х2+Тоталы): {len(bk_list)} матчей (остаток: {r.headers.get('x-requests-remaining', '?')})")
                 if bk_list:
-                    out.append("=== ODDS API ===\n" + "\n".join(bk_list[:20]))
+                    out.append("=== ODDS API ===\n" + "\n".join(bk_list[:15]))
         except Exception as e:
             print("Odds API err:", e)
 
@@ -142,7 +148,7 @@ def ask_ai(prompt):
     if groq_key:
         g_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1/chat/completions"
         hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
-        for gm in ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"]:
+        for gm in ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]:
             try:
                 r = requests.post(g_url, headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.25}, timeout=25)
                 if r.status_code == 200:
@@ -261,8 +267,8 @@ def find_matches(history, rules):
     prompt = (
         f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\n"
         f"ПОИСК (ОЗ / ИТБ / ТОТАЛЫ / СПОРТ):\n{s1}\n\nПОИСК (КИБЕРСПОРТ / ТЕННИС / БАСКЕТ):\n{s2}\n\n"
-        f"Перед тобой больше 200 матчей из Pinnacle, Polymarket, Odds API и поиска на ближайшие 16 часов от {t_str} (исключи уже взятые: {list(taken)}).\n"
-        f"Твоя задача как профессионального аналитика — НЕ отписываться пустым списком, а найти 2–6 лучших валуйных ставок и «обраток» (на кэфах 1.75–3.50) с реальным перевесом +EV >= 4.5%.\n"
+        f"Перед тобой предварительно отобранные матчи по всем видам спорта мира на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}).\n"
+        f"Найди 2–6 лучших валуйных ставок и «обраток» (на кэфах 1.70–3.60) с перевесом +EV >= 4.5%.\n"
         f"Используй ВСЮ роспись: П1/Х/П2, Форы, Общие тоталы (ТБ/ТМ), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (ОЗ Да/Нет), тоталы карт/сетов.\n"
         f"Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Рынок и ставка (напр. ОЗ - Нет, ИТБ1 (1.5), ТМ (2.5), П2)\", \"odds\": 2.15, \"prob\": 0.52, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}]."
     )
