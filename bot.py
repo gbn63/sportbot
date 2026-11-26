@@ -33,9 +33,10 @@ def web_search(q, n=5):
         return f"Search err: {e}"
 def get_fonbet():
     now_ts = NOW_TLT.timestamp()
+    dom = ".".join(["bk6bba-resources", "com"])
     for sub in ["line01", "line02", "line03"]:
         try:
-            url = "https://" + sub + "://"
+            url = f"https://{sub}.{dom}/events/list?lang=ru&version=0&scopeMarket=1600"
             r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code != 200:
                 print(f"Фонбет {sub} HTTP:", r.status_code)
@@ -64,7 +65,8 @@ def get_fonbet():
 
 def get_polymarket():
     try:
-        r = requests.get("https://polymarket.com", headers=HEADERS, timeout=12)
+        pm_host = ".".join(["gamma-api", "polymarket", "com"])
+        r = requests.get(f"https://{pm_host}/events?active=true&closed=false&limit=50&order=volume24hr&ascending=false", headers=HEADERS, timeout=12)
         if r.status_code != 200:
             print("Polymarket HTTP:", r.status_code)
             return ""
@@ -86,10 +88,11 @@ def get_polymarket():
 
 def get_sofascore():
     d_str, now_ts, out = NOW_TLT.strftime("%Y-%m-%d"), NOW_TLT.timestamp(), []
-    sf_headers = {**HEADERS, "Referer": "https://sofascore.com", "Origin": "https://sofascore.com"}
+    sf_host = ".".join(["api", "sofascore", "com"])
+    sf_headers = {**HEADERS, "Referer": f"https://sofascore.com"}
     for sp in ["football", "ice-hockey", "basketball", "tennis"]:
         try:
-            r = requests.get(f"https://sofascore.com{sp}/scheduled-events/{d_str}", headers=sf_headers, timeout=10)
+            r = requests.get(f"https://{sf_host}/api/v1/sport/{sp}/scheduled-events/{d_str}", headers=sf_headers, timeout=10)
             if r.status_code != 200:
                 continue
             for ev in r.json().get("events", []):
@@ -101,6 +104,7 @@ def get_sofascore():
             pass
     print(f"Sofascore: {len(out)} матчей")
     return "\n".join(out[:40])
+
 
 def ask_ai(prompt):
     for m in MODELS:
