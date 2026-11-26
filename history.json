@@ -1,5 +1,5 @@
 {
-  "bank": 10191.0,
+  "bank": 10241.0,
   "bets": [
     {
       "match": "Чикаго Беарз — Детройт Лайонс",
@@ -24,8 +24,8 @@
       "prob": 0.4,
       "ev": 7.99,
       "stake_rub": 112.0,
-      "status": "PENDING",
-      "score": "",
+      "status": "WIN",
+      "score": "2 : 4",
       "last_live": "Счёт: Sparta Prague 2 – 0 AZ Alkmaar  ",
       "last_nums": "2:1",
       "closed_live": true,
@@ -41,8 +41,8 @@
       "prob": 0.54,
       "ev": 5.02,
       "stake_rub": 139.0,
-      "status": "PENDING",
-      "score": "",
+      "status": "LOSE",
+      "score": "2 : 1",
       "last_nums": "0:1",
       "last_sig": "2:1"
     },
