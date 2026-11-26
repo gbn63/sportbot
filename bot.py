@@ -9,9 +9,14 @@ CHAT_ID = os.environ["CHAT_ID"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
 
+TG_HOST = "https://" + "api.telegram.org"
+GEM_HOST = "https://" + "generativelanguage.googleapis.com"
+
 def send_tg(text):
     try:
-        requests.post(f"https://telegram.org{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+        if r.status_code != 200:
+            print("TG HTTP error:", r.status_code, r.text[:120])
     except Exception as e:
         print("TG error:", e)
 
@@ -25,27 +30,29 @@ def web_search(query, n=6):
 def get_gemini_models():
     models = []
     try:
-        r = requests.get(f"https://googleapis.com{GEMINI_API_KEY}", timeout=10)
+        r = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=10)
         for m in r.json().get("models", []):
             name = m.get("name", "").replace("models/", "")
             methods = m.get("supportedGenerationMethods", [])
-            if "flash" in name.lower() and "lite" not in name.lower() and "image" not in name.lower() and "generateContent" in methods:
+            if "flash" in name.lower() and "image" not in name.lower() and "tts" not in name.lower() and "live" not in name.lower() and "generateContent" in methods:
                 models.append(name)
     except Exception as e:
         print("List models error:", e)
-    return models if models else ["gemini-2.5-flash", "gemini-2.0-flash"]
+    fallback = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+    return models if models else fallback
 
 ACTIVE_MODELS = get_gemini_models()
 
 def ask_ai(prompt):
     for m in ACTIVE_MODELS:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
+            url = f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
             payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
             r = requests.post(url, json=payload, timeout=30)
             if r.status_code == 200:
-                data = r.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                cand = next(iter(r.json()["candidates"]))
+                part = next(iter(cand["content"]["parts"]))
+                return part["text"]
             print(f"Model {m} HTTP {r.status_code}: {r.text[:120]}")
         except Exception as e:
             print(f"Model {m} error:", e)
