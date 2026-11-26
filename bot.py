@@ -99,7 +99,7 @@ def get_market_data():
 def ask_ai(prompt):
     for m in MODELS:
         try:
-            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=60)
+            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=90)
             if r.status_code == 200:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 print(f"ИИ ({m}) ответил: {len(txt)} симв.")
@@ -160,9 +160,9 @@ def check_live(history):
 def find_matches(history, rules):
     taken = {b["match"] for b in history["bets"]}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
-    fb, pm, sf = get_fonbet(), get_polymarket(), get_sofascore()
-    s1 = web_search(f"прогнозы коэффициенты матчи сегодня {d_str} футбол хоккей Dota 2 CS2 hltv")
-    prompt = f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\nФОНБЕТ (через 15-120 мин):\n{fb}\n\nPOLYMARKET (вероятности рынка):\n{pm}\n\nSOFASCORE:\n{sf}\n\nПОИСК:\n{s1}\n\nНайди 1-2 лучших матча через 15-120 мин от {t_str}, которых НЕТ в {list(taken)}. Ищи перевес +EV >= 7% (сравнивая Фонбет с Polymarket/рынком и обратки 1.80-3.50). Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Ставка\", \"odds\": 2.15, \"prob\": 0.54, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}] или []."
+    mkt = get_market_data()
+    s1 = web_search(f"расписание прогнозы коэффициенты сегодня {d_str} КХЛ футбол Лига Европы Dota 2 CS2 hltv")
+    prompt = f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\nПОИСК (КХЛ/Европа/Киберспорт):\n{s1}\n\nНайди 1-2 лучших матча через 15-240 мин от {t_str}, которых НЕТ в {list(taken)}. Ищи перевес +EV >= 7% с поправкой на маржу Фонбета (особенно обратки на кэфах 1.80-3.50 и валуи по Polymarket/ESPN). Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Ставка\", \"odds\": 2.15, \"prob\": 0.54, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}] или []."
     raw = ask_ai(prompt)
     try:
         cands = json.loads(raw[raw.find("["):raw.rfind("]")+1])
@@ -176,14 +176,16 @@ def find_matches(history, rules):
         ev, pct, rub = calc_stats(prob, odds, history["bank"])
         if ev < 7.0 or rub <= 0:
             continue
+        min_odds = round(1.05 / prob, 2) if prob > 0 else odds
         parts = str(c.get("start_time", "")).split(":")
-        st = NOW_TLT.replace(hour=int(parts[0]), minute=int(parts[1]), second=0, microsecond=0) if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit() else NOW_TLT + datetime.timedelta(minutes=45)
+        st = NOW_TLT.replace(hour=int(parts), minute=int(parts), second=0, microsecond=0) if len(parts) == 2 and parts.isdigit() and parts.isdigit() else NOW_TLT + datetime.timedelta(minutes=45)
         if st < NOW_TLT - datetime.timedelta(minutes=30):
             st += datetime.timedelta(days=1)
         history["bets"].append({"match": c["match"], "league": c.get("league", ""), "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": rub, "status": "PENDING", "score": ""})
-        send_tg(f"🎯 <b>СИГНАЛ ({c.get('type', 'Валуй')}) | {c.get('league', '')}</b>\n⚽ <b>{c['match']}</b>\n⏰ Старт (ТЛТ): <b>{st.strftime('%H:%M')}</b>\n📌 Ставка: <b>{c['pick']}</b> | Кэф: <b>{odds:.2f}</b>\n📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n💰 Сумма (1/4 Келли): <b>{rub:.0f} ₽</b> ({pct}% банка)\n\n💡 <i>Суть:</i> {c.get('reason', '')}\n⚡ <i>Лайв-план:</i> {c.get('live_plan', '')}\n⚠️ <i>Риск:</i> {c.get('risk', '')}")
+        send_tg(f"🎯 <b>СИГНАЛ ({c.get('type', 'Валуй')}) | {c.get('league', '')}</b>\n⚽ <b>{c['match']}</b>\n⏰ Старт (ТЛТ): <b>{st.strftime('%H:%M')}</b>\n📌 Ставка: <b>{c['pick']}</b> | Ориентир кэфа: <b>{odds:.2f}</b> (мин. в Фонбете: <b>{min_odds:.2f}</b>)\n📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n💰 Сумма (1/4 Келли): <b>{rub:.0f} ₽</b> ({pct}% банка)\n\n💡 <i>Суть:</i> {c.get('reason', '')}\n⚡ <i>Лайв-план:</i> {c.get('live_plan', '')}\n⚠️ <i>Риск:</i> {c.get('risk', '')}")
         upd = True
     return history, upd
+
 
 def main():
     with open("history.json", "r", encoding="utf-8") as f:
