@@ -1,6 +1,6 @@
 import os, json, time, datetime, requests, warnings
 import numpy as np
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 warnings.filterwarnings("ignore")
 
@@ -11,15 +11,29 @@ NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
 
 TG_HOST = "https://" + ".".join(["api", "telegram", "org"])
 GEM_HOST = "https://" + ".".join(["generativelanguage", "googleapis", "com"])
-ACTIVE_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash"]
+ACTIVE_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite"
+]
 
 def send_tg(text):
     try:
-        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+        r = requests.post(
+            f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
+            timeout=15
+        )
         if r.status_code != 200:
             print("TG HTTP error:", r.status_code, r.text[:120])
+            return False
+        return True
     except Exception as e:
         print("TG error:", e)
+        return False
 
 def web_search(query, n=6):
     try:
@@ -84,6 +98,7 @@ def check_results(history, rules):
     return history, rules, upd
 
 def check_live(history):
+    sent = False
     for bet in history["bets"]:
         if bet["status"] != "PENDING":
             continue
@@ -92,7 +107,9 @@ def check_live(history):
             info = web_search(f"{bet['match']} live счет статистика сейчас")
             adv = ask_ai(f"Матч {bet['match']} в лайве (~{int(mins)} мин). Ставка: {bet['pick']} за {bet['odds']}. Данные:\n{info}\nЕсли всё по плану — верни OK. Если против плана — совет в 3 строки: ДЕРЖАТЬ, ПРОДАТЬ или ПЕРЕКРЫТЬСЯ.").strip()
             if adv and "OK" not in adv[:10].upper():
-                send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}")
+                if send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
+                    sent = True
+    return sent
 
 def find_matches(history, rules):
     taken = {b["match"] for b in history["bets"]}
@@ -121,7 +138,19 @@ def find_matches(history, rules):
                 st += datetime.timedelta(days=1)
         except Exception:
             st = NOW_TLT + datetime.timedelta(minutes=45)
-        history["bets"].append({"match": c["match"], "league": c.get("league", ""), "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": rub, "status": "PENDING", "score": ""})
+        history["bets"].append({
+            "match": c["match"],
+            "league": c.get("league", ""),
+            "start_iso": st.isoformat(),
+            "type": c.get("type", "Валуй"),
+            "pick": c["pick"],
+            "odds": odds,
+            "prob": prob,
+            "ev": ev,
+            "stake_rub": rub,
+            "status": "PENDING",
+            "score": ""
+        })
         send_tg(f"🎯 <b>СИГНАЛ ({c.get('type', 'Валуй')}) | {c.get('league', '')}</b>\n⚽ <b>{c['match']}</b>\n⏰ Старт (Тольятти): <b>{st.strftime('%H:%M')}</b>\n📌 Ставка: <b>{c['pick']}</b> | Кэф: <b>{odds:.2f}</b>\n📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n💰 Сумма (1/4 Келли): <b>{rub:.0f} ₽</b> ({pct}% банка)\n\n💡 <i>Суть:</i> {c.get('reason', '')}\n⚡ <i>Лайв-план:</i> {c.get('live_plan', '')}\n⚠️ <i>Риск:</i> {c.get('risk', '')}")
         upd = True
     return history, upd
@@ -131,16 +160,22 @@ def main():
         history = json.load(f)
     with open("rules.txt", "r", encoding="utf-8") as f:
         rules = f.read()
+
     history, rules, u1 = check_results(history, rules)
-    check_live(history)
+    live_sent = check_live(history)
     history, u2 = find_matches(history, rules)
+
     if u1 or u2:
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
+
+    # При ручном запуске (Run workflow) отправляем пинг, если сигналов не было
+    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and not (u1 or u2 or live_sent):
+        send_tg(f"🤖 <b>Система 5.0 на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nСвязь с каналом и ИИ работает штатно. Подходящих матчей с +EV ≥ 7% в ближайшие 2 часа не найдено.")
+
     print(f"Готово ({NOW_TLT.strftime('%H:%M')} ТЛТ). Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
     main()
-# КОНЕЦ КОДА
