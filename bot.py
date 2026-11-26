@@ -31,70 +31,40 @@ def web_search(q, n=5):
             return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, max_results=n)])
     except Exception as e:
         return f"Search err: {e}"
-def get_fonbet():
-    now_ts = NOW_TLT.timestamp()
-    dom = ".".join(["fon", "bet"])
-    for sub in ["line01", "line02", "line03"]:
-        try:
-            url = f"https://{sub}.{dom}/events/list?lang=ru&version=0&scopeMarket=1600"
-            r = requests.get(url, headers=HEADERS, timeout=15)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            sports = {s["id"]: s.get("name", "") for s in data.get("sports", [])}
-            fmap = {cf["e"]: {f["f"]: f["v"] for f in cf.get("factors", []) if "f" in f and "v" in f} for cf in data.get("customFactors", []) if "e" in cf}
-            out = []
-            for ev in data.get("events", []):
-                if ev.get("place") != "line" or ev.get("level") != 1:
-                    continue
-                st_ts = ev.get("startTime", 0)
-                if not (15 <= (st_ts - now_ts) / 60.0 <= 120):
-                    continue
-                t1, t2 = ev.get("team1", ""), ev.get("team2", "")
-                f = fmap.get(ev["id"], {})
-                odds = [f"{lbl}={f[fid]}" for fid, lbl in [(921, "П1"), (922, "Х"), (923, "П2"), (924, "1Х"), (925, "12"), (926, "Х2")] if fid in f]
-                if t1 and t2 and odds:
-                    st_str = datetime.datetime.fromtimestamp(st_ts, tz=NOW_TLT.tzinfo).strftime("%H:%M")
-                    out.append(f"[{st_str}] {sports.get(ev.get('sportId'), '')} | {t1} — {t2} | {', '.join(odds)}")
-            print(f"Фонбет ({sub}): {len(out)} матчей")
-            return "\n".join(out[:50])
-        except Exception as e:
-            print(f"Фонбет {sub} err:", e)
-    return "Фонбет недоступен с IP GitHub."
-
-def get_polymarket():
+def get_market_data():
+    now_ts, out = NOW_TLT.timestamp(), []
     try:
         pm_host = ".".join(["gamma-api", "polymarket", "com"])
         r = requests.get(f"https://{pm_host}/events?active=true&closed=false&limit=50&order=volume24hr&ascending=false", headers=HEADERS, timeout=12)
-        if r.status_code != 200:
-            return ""
-        out = []
-        for ev in r.json():
-            title = ev.get("title", "")
-            for m in ev.get("markets", [])[:2]:
-                q = m.get("question", title)
-                outcomes = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
-                prices = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
-                if q and len(outcomes) == len(prices) and prices:
-                    probs = ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(outcomes, prices)])
-                    out.append(f"- {q} -> {probs}")
-        print(f"Polymarket: {len(out)} рынков")
-        return "\n".join(out[:25])
+        if r.status_code == 200:
+            pm_list = []
+            for ev in r.json():
+                for m in ev.get("markets", [])[:2]:
+                    q = m.get("question", ev.get("title", ""))
+                    oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
+                    pr = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
+                    if q and len(oc) == len(pr) and pr:
+                        pm_list.append(f"- {q} -> " + ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(oc, pr)]))
+            print(f"Polymarket: {len(pm_list)} рынков")
+            out.append("=== POLYMARKET (РЕАЛЬНЫЕ ВЕРОЯТНОСТИ РЫНКА) ===\n" + "\n".join(pm_list[:25]))
     except Exception as e:
         print("Polymarket err:", e)
-        return ""
 
-def get_sofascore():
-    now_ts, out = NOW_TLT.timestamp(), []
     espn = ".".join(["site", "api", "espn", "com"])
-    paths = [
-        ("Еврофутбол/Мир", "soccer/all/scoreboard"),
+    leagues = [
+        ("Еврофутбол (Топ/Еврокубки)", "soccer/all/scoreboard"),
+        ("АПЛ", "soccer/eng.1/scoreboard"),
+        ("Ла Лига", "soccer/esp.1/scoreboard"),
+        ("Серия А", "soccer/ita.1/scoreboard"),
+        ("Бундеслига", "soccer/ger.1/scoreboard"),
+        ("Лига Чемпионов", "soccer/uefa.champions/scoreboard"),
         ("Хоккей НХЛ", "hockey/nhl/scoreboard"),
         ("Баскетбол НБА", "basketball/nba/scoreboard")
     ]
-    for title, p in paths:
+    espn_list = []
+    for title, path in leagues:
         try:
-            r = requests.get(f"https://{espn}/apis/site/v2/sports/{p}", headers=HEADERS, timeout=10)
+            r = requests.get(f"https://{espn}/apis/site/v2/sports/{path}", headers=HEADERS, timeout=10)
             if r.status_code != 200:
                 continue
             for ev in r.json().get("events", []):
@@ -102,26 +72,29 @@ def get_sofascore():
                 if not dt_iso:
                     continue
                 st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
-                if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 120:
+                if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 240:
                     comp = next(iter(ev.get("competitions", [])), {})
                     odds_txt = f" | Линия: {comp['odds'].get('details', '')}" if comp.get("odds") else ""
-                    out.append(f"[{st_dt.strftime('%H:%M')}] {title}: {ev.get('name', '')}{odds_txt}")
+                    line = f"[{st_dt.strftime('%H:%M')}] {title}: {ev.get('name', '')}{odds_txt}"
+                    if line not in espn_list:
+                        espn_list.append(line)
         except Exception:
             pass
+    print(f"ESPN (Европа + США): {len(espn_list)} матчей")
+    if espn_list:
+        out.append("=== ESPN (СТАРТ ЧЕРЕЗ 15-240 МИН) ===\n" + "\n".join(espn_list[:35]))
+
     try:
         od_host = ".".join(["api", "opendota", "com"])
         r = requests.get(f"https://{od_host}/api/proMatches", headers=HEADERS, timeout=10)
         if r.status_code == 200:
-            recent = [f"{m.get('radiant_name')} vs {m.get('dire_name')} ({m.get('league_name', '')})" for m in r.json()[:8] if m.get("radiant_name") and m.get("dire_name")]
-            if recent:
-                out.append("Dota 2 (актуальные про-серии OpenDota): " + "; ".join(recent))
+            dota = [f"{m.get('radiant_name')} vs {m.get('dire_name')} ({m.get('league_name', '')})" for m in r.json()[:8] if m.get("radiant_name")]
+            if dota:
+                out.append("=== DOTA 2 (АКТУАЛЬНЫЕ ПРО-СЕРИИ) ===\n" + "; ".join(dota))
     except Exception:
         pass
-    print(f"Евроспорт + Dota 2: {len(out)} записей")
-    return "\n".join(out[:45])
 
-
-
+    return "\n\n".join(out)
 
 def ask_ai(prompt):
     for m in MODELS:
