@@ -1,43 +1,11 @@
-import os, json, time, datetime, requests, warnings
-import numpy as np
-from ddgs import DDGS
-
-warnings.filterwarnings("ignore")
-
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
-
-TG_HOST = "https://" + ".".join(["api", "telegram", "org"])
-GEM_HOST = "https://" + ".".join(["generativelanguage", "googleapis", "com"])
-MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0", "Accept": "application/json"}
-
-def send_tg(text):
-    try:
-        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
-        if r.status_code != 200:
-            print("TG HTTP error:", r.status_code, r.text[:100])
-            return False
-        return True
-    except Exception as e:
-        print("TG error:", e)
-        return False
-
-def web_search(q, n=5):
-    try:
-        with DDGS() as d:
-            return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, max_results=n)])
-    except Exception as e:
-        return f"Search err: {e}"
-
 def get_fonbet():
     now_ts = NOW_TLT.timestamp()
-    for host in ["://bk6bba-resources.com", "://bk6bba-resources.com"]:
+    for sub in ["line01", "line02", "line03"]:
         try:
-            r = requests.get(f"https://{host}/events/list?lang=ru&version=0&scopeMarket=1600", headers=HEADERS, timeout=15)
+            url = "https://" + sub + "://"
+            r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code != 200:
+                print(f"Фонбет {sub} HTTP:", r.status_code)
                 continue
             data = r.json()
             sports = {s["id"]: s.get("name", "") for s in data.get("sports", [])}
@@ -55,35 +23,40 @@ def get_fonbet():
                 if t1 and t2 and odds:
                     st_str = datetime.datetime.fromtimestamp(st_ts, tz=NOW_TLT.tzinfo).strftime("%H:%M")
                     out.append(f"[{st_str}] {sports.get(ev.get('sportId'), '')} | {t1} — {t2} | {', '.join(odds)}")
-            print(f"Фонбет: {len(out)} матчей")
+            print(f"Фонбет ({sub}): {len(out)} матчей")
             return "\n".join(out[:45])
         except Exception as e:
-            print("Фонбет err:", e)
+            print(f"Фонбет {sub} err:", e)
     return "Фонбет недоступен с IP GitHub."
 
 def get_polymarket():
     try:
         r = requests.get("https://polymarket.com", headers=HEADERS, timeout=12)
         if r.status_code != 200:
+            print("Polymarket HTTP:", r.status_code)
             return ""
         out = []
-        for m in r.json():
-            q = m.get("question", "")
-            outcomes = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
-            prices = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
-            if q and len(outcomes) == len(prices) and prices:
-                probs = ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(outcomes, prices)])
-                out.append(f"- {q} -> {probs}")
+        for ev in r.json():
+            title = ev.get("title", "")
+            for m in ev.get("markets", [])[:2]:
+                q = m.get("question", title)
+                outcomes = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
+                prices = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
+                if q and len(outcomes) == len(prices) and prices:
+                    probs = ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(outcomes, prices)])
+                    out.append(f"- {q} -> {probs}")
         print(f"Polymarket: {len(out)} рынков")
         return "\n".join(out[:25])
     except Exception as e:
         print("Polymarket err:", e)
         return ""
+
 def get_sofascore():
     d_str, now_ts, out = NOW_TLT.strftime("%Y-%m-%d"), NOW_TLT.timestamp(), []
+    sf_headers = {**HEADERS, "Referer": "https://sofascore.com", "Origin": "https://sofascore.com"}
     for sp in ["football", "ice-hockey", "basketball", "tennis"]:
         try:
-            r = requests.get(f"https://sofascore.com{sp}/scheduled-events/{d_str}", headers=HEADERS, timeout=10)
+            r = requests.get(f"https://sofascore.com{sp}/scheduled-events/{d_str}", headers=sf_headers, timeout=10)
             if r.status_code != 200:
                 continue
             for ev in r.json().get("events", []):
