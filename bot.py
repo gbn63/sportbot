@@ -9,8 +9,8 @@ CHAT_ID = os.environ["CHAT_ID"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
 
-TG_HOST = "https://" + "api.telegram.org"
-GEM_HOST = "https://" + "://googleapis.com"
+TG_HOST = "https://" + ".".join(["api", "telegram", "org"])
+GEM_HOST = "https://" + ".".join(["generativelanguage", "googleapis", "com"])
 ACTIVE_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
 
 def send_tg(text):
