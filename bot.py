@@ -268,14 +268,15 @@ def find_matches(history, rules):
         f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\n"
         f"ПОИСК (ОЗ / ИТБ / ТОТАЛЫ / СПОРТ):\n{s1}\n\nПОИСК (КИБЕРСПОРТ / ТЕННИС / БАСКЕТ):\n{s2}\n\n"
         f"Перед тобой предварительно отобранные матчи по всем видам спорта мира на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}).\n"
-        f"Найди 2–6 лучших валуйных ставок и «обраток» (на кэфах 1.70–3.60) с перевесом +EV >= 4.5%.\n"
+        f"Найди 2–6 лучших валуйных ставок и «обраток» (на кэфах 1.70–3.60) с перевесом +EV >= 2.0% против линии Pinnacle/рынка.\n"
         f"Используй ВСЮ роспись: П1/Х/П2, Форы, Общие тоталы (ТБ/ТМ), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (ОЗ Да/Нет), тоталы карт/сетов.\n"
-        f"Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Рынок и ставка (напр. ОЗ - Нет, ИТБ1 (1.5), ТМ (2.5), П2)\", \"odds\": 2.15, \"prob\": 0.52, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}]."
+        f"Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Рынок и ставка (напр. ОЗ - Нет, ИТБ1 (1.5), ТМ (2.5), П2)\", \"odds\": 2.15, \"prob\": 0.50, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}]."
     )
     raw = ask_ai(prompt)
     try:
         cands = json.loads(raw[raw.find("["):raw.rfind("]")+1])
-    except Exception:
+    except Exception as e:
+        print("JSON parse err:", e, raw[:120])
         return history, False
     upd = False
     for c in cands:
@@ -285,9 +286,10 @@ def find_matches(history, rules):
                 continue
             odds, prob = float(c["odds"]), float(c["prob"])
             ev, pct, rub = calc_stats(prob, odds, history["bank"])
-            if ev < 4.5 or rub <= 0:
+            print(f"Кандидат ИИ: {m_name} | {c.get('pick')} @ {odds} | prob={prob} -> +EV={ev}%")
+            if ev < 2.0 or rub <= 0:
                 continue
-            min_odds = round(1.04 / prob, 2) if prob > 0 else odds
+            min_odds = round(1.02 / prob, 2) if prob > 0 else odds
             st = parse_start_dt(c.get("start_time", ""))
             history["bets"].append({"match": m_name, "league": c.get("league", ""), "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": rub, "status": "PENDING", "score": ""})
             send_tg(f"🎯 <b>СИГНАЛ ({c.get('type', 'Валуй')}) | {c.get('league', '')}</b>\n🏆 <b>{m_name}</b>\n⏰ Старт (ТЛТ): <b>{st.strftime('%H:%M')}</b>\n📌 Ставка: <b>{c['pick']}</b> | Ориентир кэфа: <b>{odds:.2f}</b> (мин. в Фонбете: <b>{min_odds:.2f}</b>)\n📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n💰 Сумма (1/4 Келли): <b>{rub:.0f} ₽</b> ({pct}% банка)\n\n💡 <i>Суть:</i> {c.get('reason', '')}\n⚡ <i>Лайв-план:</i> {c.get('live_plan', '')}\n⚠️ <i>Риск:</i> {c.get('risk', '')}")
@@ -314,7 +316,7 @@ def main():
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
     if is_manual and not (u1 or u2 or live_sent):
-        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nВсе мировые источники опрошены. Новых матчей с +EV ≥ 4.5% не найдено.")
+        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nВсе мировые источники опрошены. Новых матчей с +EV ≥ 2.0% не найдено.")
     print(f"Готово ({NOW_TLT.strftime('%H:%M')} ТЛТ). Лайв: {live_sent}, Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
