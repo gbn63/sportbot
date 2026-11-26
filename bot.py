@@ -140,32 +140,32 @@ def get_all_sources():
 def ask_ai(prompt):
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if groq_key:
-        try:
-            g_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1"
-            hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
-            mr = requests.get(f"{g_url}/models", headers=hdr, timeout=10)
-            if mr.status_code == 200:
-                avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus", "allam", "qwen", "20b"])]
-                for gm in avail[:3]:
-                    r = requests.post(f"{g_url}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=25)
-                    if r.status_code == 200:
-                        choice = next(iter(r.json()["choices"]))
-                        txt = choice["message"]["content"]
+        g_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1/chat/completions"
+        hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+        for gm in ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"]:
+            try:
+                r = requests.post(g_url, headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.25}, timeout=25)
+                if r.status_code == 200:
+                    choice = next(iter(r.json()["choices"]))
+                    txt = choice["message"]["content"]
+                    if len(txt) > 5:
                         print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
                         return txt
-                    print(f"Groq {gm} HTTP {r.status_code}: {r.text[:90]}")
-        except Exception as e:
-            print("Groq err:", e)
+                else:
+                    print(f"Groq {gm} HTTP {r.status_code}")
+            except Exception as e:
+                print(f"Groq {gm} err:", e)
 
-    for m in ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"]:
+    for m in ["gemini-3.8-flash", "gemini-3.6-flash"]:
         try:
-            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
+            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.25}}, timeout=25)
             if r.status_code == 200:
                 cand = next(iter(r.json()["candidates"]))
                 part = next(iter(cand["content"]["parts"]))
                 txt = part["text"]
-                print(f"ИИ ({m}) ответил: {len(txt)} симв.")
-                return txt
+                if len(txt) > 5:
+                    print(f"ИИ ({m}) ответил: {len(txt)} симв.")
+                    return txt
         except Exception:
             pass
     return ""
@@ -232,10 +232,13 @@ def check_live(history):
             f"Табло ESPN:\n{espn_sc}\nПоиск:\n{info}\n\n"
             f"Если реального счёта нет или игра идёт по плану — верни СТРОГО слово OK.\n"
             f"Если есть счёт и игра идёт против ставки — верни СТРОГО в 3 строки:\n"
-            f"Счёт: [счёт и минута]\nДействие: [ДЕРЖАТЬ / ПРОДАТЬ / ПЕРЕКРЫТЬСЯ]\nПричина: [почему нужно так сделать]"
+            f"Счёт: [текущий счёт без минуты]\nДействие: [ДЕРЖАТЬ / ПРОДАТЬ / ПЕРЕКРЫТЬСЯ]\nПричина: [почему нужно так сделать (укажи минуту тут)]"
         ).strip()
-        if adv and "OK" not in adv[:15].upper() and send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
-            sent = True
+        if adv and "OK" not in adv[:15].upper():
+            first_line = next(iter(adv.splitlines()), "")
+            if bet.get("last_live") != first_line and send_tg(f"⚡ <b>ЛАЙВ-КОНТРОЛЬ: {bet['match']}</b>\n{adv}"):
+                bet["last_live"] = first_line
+                sent = True
     return sent
 def parse_start_dt(t_str):
     parts = str(t_str).strip().split(":")
@@ -258,11 +261,10 @@ def find_matches(history, rules):
     prompt = (
         f"Время ТЛТ (UTC+4): {d_str} {t_str}. Правила:\n{rules}\n\n{mkt}\n\n"
         f"ПОИСК (ОЗ / ИТБ / ТОТАЛЫ / СПОРТ):\n{s1}\n\nПОИСК (КИБЕРСПОРТ / ТЕННИС / БАСКЕТ):\n{s2}\n\n"
-        f"Проанализируй ВЕСЬ спорт и киберспорт мира (футбол, хоккей, баскетбол, теннис, волейбол, наст. теннис, CS2, Dota 2 и др.) "
-        f"с началом в ближайшие 16 часов от {t_str}, которых НЕТ в {list(taken)}.\n"
+        f"Перед тобой больше 200 матчей из Pinnacle, Polymarket, Odds API и поиска на ближайшие 16 часов от {t_str} (исключи уже взятые: {list(taken)}).\n"
+        f"Твоя задача как профессионального аналитика — НЕ отписываться пустым списком, а найти 2–6 лучших валуйных ставок и «обраток» (на кэфах 1.75–3.50) с реальным перевесом +EV >= 4.5%.\n"
         f"Используй ВСЮ роспись: П1/Х/П2, Форы, Общие тоталы (ТБ/ТМ), Индивидуальные тоталы (ИТБ/ИТМ), Обе забьют (ОЗ Да/Нет), тоталы карт/сетов.\n"
-        f"Выдай ВСЕ топовые матчи с перевесом +EV >= 5.0% (обратки 1.80-3.50 и валуи по статистике/xG/форме). "
-        f"Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Рынок и ставка (напр. ОЗ - Нет, ИТБ1 (1.5), ТМ (2.5), П2)\", \"odds\": 2.15, \"prob\": 0.53, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}] или []."
+        f"Верни СТРОГО JSON-массив: [{{\"match\": \"К1 — К2\", \"league\": \"Лига\", \"start_time\": \"ЧЧ:ММ\", \"type\": \"Обратка или Валуй\", \"pick\": \"Рынок и ставка (напр. ОЗ - Нет, ИТБ1 (1.5), ТМ (2.5), П2)\", \"odds\": 2.15, \"prob\": 0.52, \"reason\": \"Суть перевеса\", \"live_plan\": \"План в лайве\", \"risk\": \"Риск\"}}]."
     )
     raw = ask_ai(prompt)
     try:
@@ -277,9 +279,9 @@ def find_matches(history, rules):
                 continue
             odds, prob = float(c["odds"]), float(c["prob"])
             ev, pct, rub = calc_stats(prob, odds, history["bank"])
-            if ev < 5.0 or rub <= 0:
+            if ev < 4.5 or rub <= 0:
                 continue
-            min_odds = round(1.05 / prob, 2) if prob > 0 else odds
+            min_odds = round(1.04 / prob, 2) if prob > 0 else odds
             st = parse_start_dt(c.get("start_time", ""))
             history["bets"].append({"match": m_name, "league": c.get("league", ""), "start_iso": st.isoformat(), "type": c.get("type", "Валуй"), "pick": c["pick"], "odds": odds, "prob": prob, "ev": ev, "stake_rub": rub, "status": "PENDING", "score": ""})
             send_tg(f"🎯 <b>СИГНАЛ ({c.get('type', 'Валуй')}) | {c.get('league', '')}</b>\n🏆 <b>{m_name}</b>\n⏰ Старт (ТЛТ): <b>{st.strftime('%H:%M')}</b>\n📌 Ставка: <b>{c['pick']}</b> | Ориентир кэфа: <b>{odds:.2f}</b> (мин. в Фонбете: <b>{min_odds:.2f}</b>)\n📊 Вероятность: {prob*100:.1f}% | +EV (100k MC): <b>+{ev}%</b>\n💰 Сумма (1/4 Келли): <b>{rub:.0f} ₽</b> ({pct}% банка)\n\n💡 <i>Суть:</i> {c.get('reason', '')}\n⚡ <i>Лайв-план:</i> {c.get('live_plan', '')}\n⚠️ <i>Риск:</i> {c.get('risk', '')}")
@@ -300,13 +302,13 @@ def main():
     u2 = False
     if is_manual or NOW_TLT.minute < 5:
         history, u2 = find_matches(history, rules)
-    if u1 or u2:
+    if u1 or u2 or live_sent:
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
     if is_manual and not (u1 or u2 or live_sent):
-        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nВсе мировые источники опрошены. Новых матчей с +EV ≥ 5% не найдено.")
+        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%H:%M')} ТЛТ)</b>\nВсе мировые источники опрошены. Новых матчей с +EV ≥ 4.5% не найдено.")
     print(f"Готово ({NOW_TLT.strftime('%H:%M')} ТЛТ). Лайв: {live_sent}, Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
