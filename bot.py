@@ -105,7 +105,7 @@ def ask_ai(prompt):
             hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
             mr = requests.get(f"{g_url}/models", headers=hdr, timeout=10)
             if mr.status_code == 200:
-                avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus", "allam", "qwen"])]
+                avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus", "allam", "qwen", "20b"])]
                 for gm in avail[:3]:
                     r = requests.post(f"{g_url}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=20)
                     if r.status_code == 200:
