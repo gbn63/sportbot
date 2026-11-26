@@ -109,28 +109,40 @@ def ask_ai(prompt):
             print(f"Model {m} HTTP {r.status_code}")
         except Exception:
             print(f"Model {m} err: timeout/net")
-    groq_key = os.environ.get("GROQ_API_KEY", "")
+
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if groq_key:
-        g_host = ".".join(["api", "groq", "com"])
-        for gm in ["qwen/qwen3-32b", "meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.1-8b-instant"]:
-            try:
-                r = requests.post(f"https://{g_host}/openai/v1/chat/completions", headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=20)
-                if r.status_code == 200:
-                    txt = r.json()["choices"]["message"]["content"]
-                    print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
-                    return txt
-                print(f"Groq {gm} HTTP:", r.status_code)
-            except Exception as e:
-                print(f"Groq {gm} err:", e)
+        try:
+            g_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1"
+            hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            mr = requests.get(f"{g_url}/models", headers=hdr, timeout=10)
+            if mr.status_code == 200:
+                avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus"])]
+                print("Groq модели:", avail[:4])
+                for gm in avail[:3]:
+                    r = requests.post(f"{g_url}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=20)
+                    if r.status_code == 200:
+                        choice = next(iter(r.json()["choices"]))
+                        txt = choice["message"]["content"]
+                        print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
+                        return txt
+            else:
+                print("Groq models HTTP:", mr.status_code)
+        except Exception as e:
+            print("Groq err:", e)
+
     try:
         r = requests.post(f"{GEM_HOST}/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
         if r.status_code == 200:
-            txt = r.json()["candidates"]["content"]["parts"]["text"]
+            cand = next(iter(r.json()["candidates"]))
+            part = next(iter(cand["content"]["parts"]))
+            txt = part["text"]
             print(f"ИИ (gemini-3.5-flash-lite) ответил: {len(txt)} симв.")
             return txt
     except Exception:
         pass
     return ""
+
 
 
 
