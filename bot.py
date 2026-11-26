@@ -24,6 +24,66 @@ def send_tg(text):
         print("TG err:", e)
         return False
 
+def update_pinned_stats(history):
+    done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
+    wins = len([b for b in done if b["status"] == "WIN"])
+    losses = len([b for b in done if b["status"] == "LOSE"])
+    pend = len([b for b in history["bets"] if b["status"] == "PENDING"])
+    wr = round(wins / len(done) * 100, 1) if done else 0.0
+    diff = history["bank"] - 10000
+    total_staked = sum(b.get("stake_rub", 500) for b in done)
+    roi = round((diff / total_staked) * 100, 1) if total_staked > 0 else 0.0
+    avg_odds = round(sum(float(b.get("odds", 0)) for b in done) / len(done), 2) if done else 0.0
+
+    streak_str = "—"
+    if done:
+        last_st = done[-1]["status"]
+        cnt = 0
+        for b in reversed(done):
+            if b["status"] == last_st:
+                cnt += 1
+            else:
+                break
+        streak_str = f"{cnt}{'✅' if last_st == 'WIN' else '❌'} подряд"
+
+    sp_stats = {}
+    for b in done:
+        lg = b.get("league", "")
+        sp = next(iter(lg.split("•"))).strip() if "•" in lg else (lg or "Спорт")
+        if sp not in sp_stats:
+            sp_stats[sp] = {"w": 0, "t": 0}
+        sp_stats[sp]["t"] += 1
+        if b["status"] == "WIN":
+            sp_stats[sp]["w"] += 1
+    top_sp = "сбор данных"
+    if sp_stats:
+        best_sp, best_data = max(sp_stats.items(), key=lambda x: (x[1]["w"] / x[1]["t"], x[1]["t"]))
+        top_sp = f"{best_sp} ({round(best_data['w'] / best_data['t'] * 100)}%)"
+
+    bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
+    text = (
+        f"📊 <b>ОТЧЁТ КАНАЛА</b>\n\n"
+        f"<b>Финансы:</b>\n"
+        f"💰 Банк: <b>{bank_fmt} ₽</b> <i>({diff:+.0f} ₽)</i> • ROI: <b>{roi:+.1f}%</b>\n\n"
+        f"<b>Дистанция:</b>\n"
+        f"🎯 Винрейт: <b>{wr}%</b> <i>({wins}✅ / {losses}❌)</i> • Ср. кэф: <b>{avg_odds:.2f}</b>\n"
+        f"🔥 Серия: <b>{streak_str}</b> • Топ: <b>{top_sp}</b>\n\n"
+        f"⏳ В игре: <b>{pend}</b> • 🕒 <i>{NOW_TLT.strftime('%d.%m.%Y • %H:%M')}</i>"
+    )
+    msg_id = history.get("pin_msg_id")
+    if msg_id:
+        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/editMessageText", json={"chat_id": CHAT_ID, "message_id": msg_id, "text": text, "parse_mode": "HTML"}, timeout=15)
+        if r.status_code == 200 or "message is not modified" in r.text:
+            return False
+    r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
+    if r.status_code == 200:
+        new_id = r.json().get("result", {}).get("message_id")
+        if new_id:
+            history["pin_msg_id"] = new_id
+            requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/pinChatMessage", json={"chat_id": CHAT_ID, "message_id": new_id, "disable_notification": True}, timeout=15)
+            return True
+    return False
+
 def web_search(q, n=5):
     try:
         with DDGS() as d:
@@ -125,7 +185,7 @@ def get_pinnacle_feed():
                         if 1.60 <= dec <= 2.45:
                             good_map[mid] = True
                         plist.append(f"«{label}»={dec}")
-                        exact_map[(mid, label)] = (dec, raw_pair[mid], raw_pair[mid][-1])
+                        exact_map[(mid, label)] = (dec, raw_pair[mid][0], raw_pair[mid][1])
                 if plist:
                     odds_map.setdefault(mid, []).append(", ".join(plist))
             sp_lines = []
@@ -171,48 +231,72 @@ def get_all_sources():
     return "\n\n".join(out), exact_map
 
 def ask_ai(prompt):
-    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if groq_key:
-        try:
-            g_base = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1"
-            hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
-            mr = requests.get(f"{g_base}/models", headers=hdr, timeout=10)
-            if mr.status_code == 200:
-                bad = ("whisper", "tts", "guard", "orpheus", "embed", "vision", "safeguard")
-                models = [x["id"] for x in mr.json().get("data", []) if not any(b in x["id"].lower() for b in bad)]
-                models.sort(key=lambda s: (0 if "120b" in s else 1 if "70b" in s else 2 if any(k in s for k in ("32b", "27b", "20b")) else 3))
-                for gm in models:
-                    try:
-                        r = requests.post(f"{g_base}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=25)
-                        if r.status_code == 200:
-                            txt = next(iter(r.json()["choices"]))["message"]["content"]
-                            if len(txt) > 5:
-                                print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
-                                return txt
-                    except Exception:
-                        continue
-        except Exception as e:
-            print("Groq list err:", e)
+    for circle in range(1, 4):
+        cur_prompt = prompt if circle == 1 else prompt[:11000]
 
-    try:
-        mr = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=10)
-        if mr.status_code == 200:
-            skip = ("embed", "imagen", "veo", "aqa", "tts", "robotics", "computer", "research", "lite", "exp")
-            g_models = [m["name"].replace("models/", "") for m in mr.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", []) and not any(s in m["name"].lower() for s in skip)]
-            g_models.sort(key=lambda s: (0 if "flash" in s else 1 if "pro" in s else 2, s))
-            for gm in g_models:
-                try:
-                    r = requests.post(f"{GEM_HOST}/v1beta/models/{gm}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=25)
-                    if r.status_code == 200:
-                        cand = next(iter(r.json()["candidates"]))
-                        txt = next(iter(cand["content"]["parts"]))["text"]
-                        if len(txt) > 5:
-                            print(f"ИИ (Google {gm}) ответил: {len(txt)} симв.")
-                            return txt
-                except Exception:
-                    continue
-    except Exception as e:
-        print("Google list err:", e)
+        groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+        if groq_key:
+            try:
+                g_base = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1"
+                hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+                mr = requests.get(f"{g_base}/models", headers=hdr, timeout=8)
+                if mr.status_code == 200:
+                    bad = ("whisper", "tts", "guard", "orpheus", "embed", "vision", "safeguard")
+                    models = [x["id"] for x in mr.json().get("data", []) if not any(b in x["id"].lower() for b in bad)]
+                    models.sort(key=lambda s: (0 if "120b" in s else 1 if "70b" in s else 2 if any(k in s for k in ("32b", "27b", "20b")) else 3))
+                    for gm in models:
+                        try:
+                            r = requests.post(f"{g_base}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": cur_prompt}], "temperature": 0.2}, timeout=20)
+                            if r.status_code == 200:
+                                txt = next(iter(r.json()["choices"]))["message"]["content"]
+                                if "{" in txt or "[" in txt:
+                                    print(f"ИИ (круг {circle}, Groq {gm}) ответил: {len(txt)} симв.")
+                                    return txt
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+        g_list = ["gemma-3-27b-it", "gemini-2.5-flash", "gemini-2.0-flash", "gemma-3-12b-it", "gemma-3-4b-it"]
+        try:
+            mr = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=8)
+            if mr.status_code == 200:
+                skip = ("embed", "imagen", "veo", "aqa", "tts", "robotics", "computer", "research", "lite", "exp", "preview", "pro")
+                for m in mr.json().get("models", []):
+                    nm = m["name"].replace("models/", "")
+                    if "generateContent" in m.get("supportedGenerationMethods", []) and not any(s in nm.lower() for s in skip) and nm not in g_list:
+                        g_list.append(nm)
+        except Exception:
+            pass
+
+        for gm in g_list:
+            try:
+                r = requests.post(f"{GEM_HOST}/v1beta/models/{gm}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": cur_prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=25)
+                if r.status_code == 200:
+                    cand = next(iter(r.json()["candidates"]))
+                    txt = next(iter(cand["content"]["parts"]))["text"]
+                    if "{" in txt or "[" in txt:
+                        print(f"ИИ (круг {circle}, Google {gm}) ответил: {len(txt)} симв.")
+                        return txt
+            except Exception:
+                continue
+
+        p_url = "https://" + ".".join(["text", "pollinations", "ai"]) + "/openai"
+        for pm in ["openai", "mistral", "deepseek"]:
+            try:
+                r = requests.post(p_url, headers={"Content-Type": "application/json"}, json={"model": pm, "messages": [{"role": "user", "content": cur_prompt}], "temperature": 0.2}, timeout=30)
+                if r.status_code == 200:
+                    txt = next(iter(r.json()["choices"]))["message"]["content"]
+                    if "{" in txt or "[" in txt:
+                        print(f"ИИ (круг {circle}, Резерв {pm}) ответил: {len(txt)} симв.")
+                        return txt
+            except Exception:
+                continue
+
+        if circle < 3:
+            print(f"Круг {circle} занят, жду 10 сек и запускаю круг {circle + 1}...")
+            time.sleep(10)
+
     return ""
 def calc_ev(prob, odds):
     return round(float(np.mean(np.where(np.random.default_rng().random(100_000) < prob, odds - 1.0, -1.0))) * 100, 2)
@@ -381,7 +465,8 @@ def main():
     if is_manual or (NOW_TLT.minute % 15 < 5):
         mkt_txt, exact_map = get_all_sources()
         history, u2 = find_matches(history, rules, mkt_txt, exact_map)
-    if u1 or u2 or rep_sent:
+    pin_upd = update_pinned_stats(history)
+    if u1 or u2 or rep_sent or pin_upd:
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
