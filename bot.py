@@ -111,17 +111,27 @@ def ask_ai(prompt):
             print(f"Model {m} err: timeout/net")
     groq_key = os.environ.get("GROQ_API_KEY", "")
     if groq_key:
-        try:
-            g_host = ".".join(["api", "groq", "com"])
-            r = requests.post(f"https://{g_host}/openai/v1/chat/completions", headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}, json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=25)
-            if r.status_code == 200:
-                txt = r.json()["choices"]["message"]["content"]
-                print(f"ИИ (Groq Llama-3.3-70B) ответил: {len(txt)} симв.")
-                return txt
-            print("Groq HTTP:", r.status_code, r.text[:100])
-        except Exception as e:
-            print("Groq err:", e)
+        g_host = ".".join(["api", "groq", "com"])
+        for gm in ["qwen/qwen3-32b", "meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.1-8b-instant"]:
+            try:
+                r = requests.post(f"https://{g_host}/openai/v1/chat/completions", headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=20)
+                if r.status_code == 200:
+                    txt = r.json()["choices"]["message"]["content"]
+                    print(f"ИИ (Groq {gm}) ответил: {len(txt)} симв.")
+                    return txt
+                print(f"Groq {gm} HTTP:", r.status_code)
+            except Exception as e:
+                print(f"Groq {gm} err:", e)
+    try:
+        r = requests.post(f"{GEM_HOST}/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
+        if r.status_code == 200:
+            txt = r.json()["candidates"]["content"]["parts"]["text"]
+            print(f"ИИ (gemini-3.5-flash-lite) ответил: {len(txt)} симв.")
+            return txt
+    except Exception:
+        pass
     return ""
+
 
 
 def calc_stats(prob, odds, bank):
