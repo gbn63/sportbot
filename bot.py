@@ -97,19 +97,32 @@ def get_market_data():
     return "\n\n".join(out)
 
 def ask_ai(prompt):
-    for m in MODELS:
+    for m in ["gemini-3.8-flash", "gemini-3.6-flash"]:
         try:
-            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=90)
+            r = requests.post(f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=15)
             if r.status_code == 200:
-                txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                cand = next(iter(r.json()["candidates"]))
+                part = next(iter(cand["content"]["parts"]))
+                txt = part["text"]
                 print(f"ИИ ({m}) ответил: {len(txt)} симв.")
                 return txt
             print(f"Model {m} HTTP {r.status_code}")
-            if r.status_code == 503:
-                time.sleep(5)
+        except Exception:
+            print(f"Model {m} err: timeout/net")
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    if groq_key:
+        try:
+            g_host = ".".join(["api", "groq", "com"])
+            r = requests.post(f"https://{g_host}/openai/v1/chat/completions", headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}, json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=25)
+            if r.status_code == 200:
+                txt = r.json()["choices"]["message"]["content"]
+                print(f"ИИ (Groq Llama-3.3-70B) ответил: {len(txt)} симв.")
+                return txt
+            print("Groq HTTP:", r.status_code, r.text[:100])
         except Exception as e:
-            print(f"Model {m} err:", e)
+            print("Groq err:", e)
     return ""
+
 
 def calc_stats(prob, odds, bank):
     ev = round(float(np.mean(np.where(np.random.default_rng().random(100_000) < prob, odds - 1.0, -1.0))) * 100, 2)
