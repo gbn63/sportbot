@@ -63,25 +63,28 @@ def get_market_data():
         ("Хоккей НХЛ", "hockey/nhl/scoreboard"),
         ("Баскетбол НБА", "basketball/nba/scoreboard")
     ]
+        d_list = [NOW_TLT.strftime("%Y%m%d"), (NOW_TLT + datetime.timedelta(days=1)).strftime("%Y%m%d")]
     espn_list = []
     for title, path in leagues:
-        try:
-            r = requests.get(f"https://{espn}/apis/site/v2/sports/{path}", headers=HEADERS, timeout=10)
-            if r.status_code != 200:
-                continue
-            for ev in r.json().get("events", []):
-                dt_iso = ev.get("date", "").replace("Z", "+00:00")
-                if not dt_iso:
+        for dt_param in d_list:
+            try:
+                r = requests.get(f"https://{espn}/apis/site/v2/sports/{path}?dates={dt_param}", headers=HEADERS, timeout=10)
+                if r.status_code != 200:
                     continue
-                st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
-                if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 720:
-                    comp = next(iter(ev.get("competitions", [])), {})
-                    odds_txt = f" | Линия: {comp['odds'].get('details', '')}" if comp.get("odds") else ""
-                    line = f"[{st_dt.strftime('%H:%M')}] {title}: {ev.get('name', '')}{odds_txt}"
-                    if line not in espn_list:
-                        espn_list.append(line)
-        except Exception:
-            pass
+                for ev in r.json().get("events", []):
+                    dt_iso = ev.get("date", "").replace("Z", "+00:00")
+                    if not dt_iso:
+                        continue
+                    st_dt = datetime.datetime.fromisoformat(dt_iso).astimezone(NOW_TLT.tzinfo)
+                    if 15 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
+                        comp = next(iter(ev.get("competitions", [])), {})
+                        odds_txt = f" | Линия: {comp['odds'].get('details', '')}" if comp.get("odds") else ""
+                        line = f"[{st_dt.strftime('%d.%m %H:%M')}] {title}: {ev.get('name', '')}{odds_txt}"
+                        if line not in espn_list:
+                            espn_list.append(line)
+            except Exception:
+                pass
+
     print(f"ESPN (Европа + США): {len(espn_list)} матчей")
     if espn_list:
         out.append("=== ESPN (СТАРТ ЧЕРЕЗ 15-240 МИН) ===\n" + "\n".join(espn_list[:35]))
@@ -106,7 +109,7 @@ def ask_ai(prompt):
             hdr = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
             mr = requests.get(f"{g_url}/models", headers=hdr, timeout=10)
             if mr.status_code == 200:
-                avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus", "allam"])]
+                avail = [x["id"] for x in mr.json().get("data", []) if not any(w in x["id"] for w in ["whisper", "guard", "tts", "orpheus", "allam", "qwen"])]
                 for gm in avail[:3]:
                     r = requests.post(f"{g_url}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}, timeout=20)
                     if r.status_code == 200:
