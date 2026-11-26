@@ -32,6 +32,7 @@ def web_search(q, n=8):
     except Exception as e:
         return f"Search err: {e}"
 
+
 def get_market_data():
     now_ts, out = NOW_TLT.timestamp(), []
     try:
