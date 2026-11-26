@@ -1,4 +1,4 @@
-import os, json, datetime, requests, warnings
+import os, json, time, datetime, requests, warnings
 import numpy as np
 from duckduckgo_search import DDGS
 
@@ -11,7 +11,7 @@ NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
 
 TG_HOST = "https://" + ".".join(["api", "telegram", "org"])
 GEM_HOST = "https://" + ".".join(["generativelanguage", "googleapis", "com"])
-ACTIVE_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+ACTIVE_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash"]
 
 def send_tg(text):
     try:
@@ -40,7 +40,9 @@ def ask_ai(prompt):
                 txt = part["text"]
                 print(f"ИИ ({m}) ответил: {len(txt)} симв.")
                 return txt
-            print(f"Model {m} HTTP {r.status_code}: {r.text[:120]}")
+            print(f"Model {m} HTTP {r.status_code}")
+            if r.status_code == 503:
+                time.sleep(5)
         except Exception as e:
             print(f"Model {m} error:", e)
     return ""
