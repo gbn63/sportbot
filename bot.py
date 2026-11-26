@@ -181,7 +181,6 @@ def find_matches(history, rules):
         try:
             hh, mm = map(int, c["start_time"].split(":"))
             st = NOW_TLT.replace(hour=hh, minute=mm, second=0, microsecond=0)
-Используйте код с осторожностью.
 if st < NOW_TLT - datetime.timedelta(minutes=30):
 st += datetime.timedelta(days=1)
 except Exception:
