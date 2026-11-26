@@ -124,7 +124,8 @@
       "stake_rub": 202.0,
       "status": "PENDING",
       "score": "",
-      "reminded_15": true
+      "reminded_15": true,
+      "last_sig": "0:0"
     },
     {
       "match": "M80 — 100 Thieves",
