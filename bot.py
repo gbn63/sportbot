@@ -10,7 +10,8 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 NOW_TLT = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=4)))
 
 TG_HOST = "https://" + "api.telegram.org"
-GEM_HOST = "https://" + "generativelanguage.googleapis.com"
+GEM_HOST = "https://" + "://googleapis.com"
+ACTIVE_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
 
 def send_tg(text):
     try:
@@ -27,32 +28,18 @@ def web_search(query, n=6):
     except Exception as e:
         return f"Search error: {e}"
 
-def get_gemini_models():
-    models = []
-    try:
-        r = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=10)
-        for m in r.json().get("models", []):
-            name = m.get("name", "").replace("models/", "")
-            methods = m.get("supportedGenerationMethods", [])
-            if "flash" in name.lower() and "image" not in name.lower() and "tts" not in name.lower() and "live" not in name.lower() and "generateContent" in methods:
-                models.append(name)
-    except Exception as e:
-        print("List models error:", e)
-    fallback = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
-    return models if models else fallback
-
-ACTIVE_MODELS = get_gemini_models()
-
 def ask_ai(prompt):
     for m in ACTIVE_MODELS:
         try:
             url = f"{GEM_HOST}/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
             payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
-            r = requests.post(url, json=payload, timeout=30)
+            r = requests.post(url, json=payload, timeout=60)
             if r.status_code == 200:
                 cand = next(iter(r.json()["candidates"]))
                 part = next(iter(cand["content"]["parts"]))
-                return part["text"]
+                txt = part["text"]
+                print(f"ИИ ({m}) ответил: {len(txt)} симв.")
+                return txt
             print(f"Model {m} HTTP {r.status_code}: {r.text[:120]}")
         except Exception as e:
             print(f"Model {m} error:", e)
@@ -138,7 +125,6 @@ def find_matches(history, rules):
     return history, upd
 
 def main():
-    print("Доступные модели:", ACTIVE_MODELS)
     with open("history.json", "r", encoding="utf-8") as f:
         history = json.load(f)
     with open("rules.txt", "r", encoding="utf-8") as f:
