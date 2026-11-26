@@ -122,6 +122,7 @@ def get_sofascore():
 
 
 
+
 def ask_ai(prompt):
     for m in MODELS:
         try:
