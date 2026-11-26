@@ -28,7 +28,8 @@
       "score": "",
       "last_live": "Счёт: Sparta Prague 2 – 0 AZ Alkmaar  ",
       "last_nums": "2:1",
-      "closed_live": true
+      "closed_live": true,
+      "last_sig": "2:4"
     },
     {
       "match": "Crystal Palace — Real Sociedad",
@@ -42,7 +43,8 @@
       "stake_rub": 139.0,
       "status": "PENDING",
       "score": "",
-      "last_nums": "0:1"
+      "last_nums": "0:1",
+      "last_sig": "2:1"
     },
     {
       "match": "Ecatepec — Atlético Mexicano F.E.",
@@ -55,7 +57,8 @@
       "ev": 6.9,
       "stake_rub": 239.0,
       "status": "PENDING",
-      "score": ""
+      "score": "",
+      "reminded_15": true
     },
     {
       "match": "Club Leon — Cruz Azul",
@@ -120,7 +123,8 @@
       "ev": 19.27,
       "stake_rub": 202.0,
       "status": "PENDING",
-      "score": ""
+      "score": "",
+      "reminded_15": true
     },
     {
       "match": "M80 — 100 Thieves",
@@ -183,6 +187,20 @@
       "odds": 4.19,
       "prob": 0.27,
       "ev": 12.6,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Кайчи Утида — Огнен Милич",
+      "orig_match": "Kaichi Uchida — Ognjen Milic",
+      "league": "Теннис • АТР Челленджер Йокосука",
+      "start_iso": "2026-11-27T05:00:00+04:00",
+      "type": "Валуй",
+      "pick": "ТМ 2.5",
+      "odds": 1.65,
+      "prob": 0.617,
+      "ev": 2.41,
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
