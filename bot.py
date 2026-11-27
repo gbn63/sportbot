@@ -165,7 +165,7 @@ def get_pinnacle_feed():
                 if sid == 12 and not any(k in lg_low for k in esports_ok):
                     continue
                 st_dt = datetime.datetime.fromisoformat(st_iso).astimezone(NOW_TLT.tzinfo)
-                if 5 <= (st_dt.timestamp() - now_ts) / 60.0 <= 960:
+                if 5 <= (st_dt.timestamp() - now_ts) / 60.0 <= 240:
                     home = next((x.get("name") for x in parts if x.get("alignment") == "home"), next(iter(parts)).get("name", ""))
                     away = next((x.get("name") for x in parts if x.get("alignment") == "away"), parts[-1].get("name", ""))
                     m_map[m["id"]] = f"[ID:{m['id']}] [{st_dt.strftime('%d.%m %H:%M')}] {sname} ({lg}): К1={home} — К2={away}"
@@ -385,7 +385,8 @@ def find_matches(history, rules, mkt_txt, exact_map):
         f"Ты опытный квантовый аналитик ставок. Пиши СТРОГО на русском языке.\n"
         f"Текущее время: {d_str} {t_str}. Правила:\n{rules}\n\n{mkt_txt}\n\n"
         f"НОВОСТИ И ПРОГНОЗЫ:\n{s1}\n{s2}\n\n"
-        f"Найди 2–6 лучших ставок из линии Pinnacle на ближайшие 16 часов от {t_str} (исключи взятые: {list(taken)}):\n"
+        f"Найди 2–6 лучших ставок из линии Pinnacle на ближайшие 4 часа от {t_str} (не позднее чем за 10 минут до старта, исключи взятые: {list(taken)}):\n"
+
         f"• РАБОТАЕМ ТОЛЬКО ПО 9 ДИСЦИПЛИНАМ: Баскетбол, Бейсбол, Волейбол, Гандбол, Counter-Strike, Dota 2, League of Legends, Футбол, Хоккей.\n"
         f"• Кэфы от 1.60 до 2.45, реальный шанс захода от 50% и выше, перевес над линией от +2.0%.\n"
         f"• ЖЁСТКОЕ ПРАВИЛО ПО РЫНКАМ: в поле pick скопируй ТОЧНУЮ формулировку в кавычках из строки Рынки выбранного матча (например: «Ф1 (-2.5) (с ОТ)», «Победа К1 (с ОТ)», «ТБ (5.5) (осн. время)», «П2»), а в поле match_id вставь числовой ID из [ID:...]. Запрещено менять знак форы или пометку ОТ!\n"
