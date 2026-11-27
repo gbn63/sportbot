@@ -15,7 +15,11 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0
 
 def send_tg(text):
     try:
-        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=15)
+        r = requests.post(
+            f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
+            timeout=15
+        )
         return r.status_code == 200
     except Exception as e:
         print("TG err:", e)
@@ -31,6 +35,7 @@ def update_pinned_stats(history):
     total_staked = sum(b.get("stake_rub", 500) for b in done)
     roi = round((diff / total_staked) * 100, 1) if total_staked > 0 else 0.0
     avg_odds = round(sum(float(b.get("odds", 0)) for b in done) / len(done), 2) if done else 0.0
+
     streak_str = "—"
     if done:
         last_st = done[-1]["status"]
@@ -41,6 +46,7 @@ def update_pinned_stats(history):
             else:
                 break
         streak_str = f"{cnt}{'✅' if last_st == 'WIN' else '❌'} подряд"
+
     sp_stats = {}
     for b in done:
         lg = b.get("league", "")
@@ -51,8 +57,9 @@ def update_pinned_stats(history):
             sp_stats[sp]["w"] += 1
     top_sp = "сбор данных"
     if sp_stats:
-        best_sp, best_data = max(sp_stats.items(), key=lambda x: (x[1]["w"] / x[1]["t"], x[1]["t"]))
-        top_sp = f"{best_sp} ({round(best_data['w'] / best_data['t'] * 100)}%)"
+        best_sp, best_d = max(sp_stats.items(), key=lambda x: (x["w"] / x["t"], x["t"]))
+        top_sp = f"{best_sp} ({round(best_d['w'] / best_d['t'] * 100)}%)"
+
     bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
     text = (
         f"📊 <b>ОТЧЁТ КАНАЛА</b>\n\n<b>Финансы:</b>\n"
@@ -63,7 +70,11 @@ def update_pinned_stats(history):
     )
     msg_id = history.get("pin_msg_id")
     if msg_id:
-        r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/editMessageText", json={"chat_id": CHAT_ID, "message_id": msg_id, "text": text, "parse_mode": "HTML"}, timeout=15)
+        r = requests.post(
+            f"{TG_HOST}/bot{BOT_TOKEN}/editMessageText",
+            json={"chat_id": CHAT_ID, "message_id": msg_id, "text": text, "parse_mode": "HTML"},
+            timeout=15
+        )
         if r.status_code == 200 or "message is not modified" in r.text:
             return False
     r = requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
@@ -74,10 +85,11 @@ def update_pinned_stats(history):
             requests.post(f"{TG_HOST}/bot{BOT_TOKEN}/pinChatMessage", json={"chat_id": CHAT_ID, "message_id": new_id, "disable_notification": True}, timeout=15)
             return True
     return False
-def web_search(q, n=5):
+def web_search(q, n=5, tl="d"):
     try:
         with DDGS() as d:
-            return "\n".join([f"- {r['title']}: {r['body']}" for r in d.text(q, timelimit="d", max_results=n)])
+            res = d.text(q, timelimit=tl, max_results=n) if tl else d.text(q, max_results=n)
+            return "\n".join([f"- {r['title']}: {r['body']}" for r in res])
     except Exception as e:
         return f"Search err: {e}"
 
@@ -110,6 +122,7 @@ def format_pin_pick(sid, period, mtype, des, points):
     else:
         if period != 0: return ""
         suf = ""
+
     if mtype == "moneyline":
         if (sid == 19 and period == 0) or sid in (4, 3):
             return {"home": "Победа К1 (с ОТ)", "away": "Победа К2 (с ОТ)"}.get(des, "")
@@ -126,6 +139,7 @@ def format_pin_pick(sid, period, mtype, des, points):
         side = "ТБ" if des == "over" else "ТМ" if des == "under" else ""
         return f"{side} ({pv:g}){suf}" if side else ""
     return ""
+
 def get_pinnacle_feed(include_prematch=True, auto_banned=None, odds_mem=None):
     auto_banned = auto_banned or set()
     odds_mem = odds_mem if odds_mem is not None else {}
@@ -216,24 +230,69 @@ def get_soft_books_consensus():
     if not o_key: return ""
     try:
         o_host = ".".join(["api", "the-odds-api", "com"])
-        r = requests.get(f"https://{o_host}/v4/sports/upcoming/odds/?apiKey={o_key}&regions=eu,au&markets=h2h&oddsFormat=decimal", timeout=8)
+        r = requests.get(f"https://{o_host}/v4/sports/upcoming/odds/?apiKey={o_key}&regions=eu,uk,us&markets=h2h&oddsFormat=decimal", timeout=8)
         if r.status_code != 200: return ""
+        sharp_keys = {"pinnacle", "betonlineag", "lowvig", "bookmaker", "matchbook", "smarkets"}
         diffs = []
-        for ev in r.json()[:25]:
+        for ev in r.json()[:30]:
             bms = ev.get("bookmakers", [])
-            pin_bm = next((b for b in bms if b.get("key") == "pinnacle"), None)
-            soft_bms = [b for b in bms if b.get("key") != "pinnacle"]
-            if not pin_bm or len(soft_bms) < 2: continue
+            sharps = [b for b in bms if b.get("key") in sharp_keys]
+            softs = [b for b in bms if b.get("key") not in sharp_keys]
+            if not sharps or len(softs) < 2: continue
+            pin_bm = next((b for b in sharps if b.get("key") == "pinnacle"), sharps)
             pin_out = {o["name"]: float(o["price"]) for o in next(iter(pin_bm.get("markets", [])), {}).get("outcomes", [])}
             for name, p_odd in pin_out.items():
-                s_odds = [float(o["price"]) for sb in soft_bms for o in next(iter(sb.get("markets", [])), {}).get("outcomes", []) if o["name"] == name]
+                s_odds = [float(o["price"]) for sb in softs for o in next(iter(sb.get("markets", [])), {}).get("outcomes", []) if o["name"] == name]
                 if s_odds:
                     avg_soft = round(sum(s_odds) / len(s_odds), 2)
                     if avg_soft - p_odd >= 0.08 and 1.60 <= p_odd <= 2.45:
-                        diffs.append(f"- {ev.get('home_team')} — {ev.get('away_team')}: киты грузят {name} (Pinnacle {p_odd} против мягких БК {avg_soft})")
+                        diffs.append(f"- {ev.get('home_team')} — {ev.get('away_team')}: острые БК/биржи грузят {name} ({p_odd} против мягких {avg_soft})")
         return "\n".join(diffs[:10])
     except Exception:
         return ""
+
+def get_whale_exchanges():
+    lines = []
+    pm_host = ".".join(["gamma-api", "polymarket", "com"])
+    allow = ("soccer", "football", "nba", "basketball", "nhl", "hockey", "mlb", "baseball", "volleyball", "handball", "counter-strike", "cs2", "dota", "league of legends", "lol")
+    for tag in ["sports", "esports"]:
+        try:
+            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=30", headers=HEADERS, timeout=7)
+            if r.status_code == 200:
+                for ev in r.json():
+                    if not any(k in (ev.get("title", "") + " " + ev.get("slug", "")).lower() for k in allow): continue
+                    vol = float(ev.get("volume24hr") or ev.get("volume") or 0)
+                    v_tag = f" [КИТЫ: ${int(vol):,}]" if vol >= 10000 else (f" [Объём: ${int(vol):,}]" if vol > 500 else "")
+                    for m in ev.get("markets", [])[:2]:
+                        q = m.get("question", ev.get("title", ""))
+                        oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
+                        pr = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
+                        if q and len(oc) == len(pr) and pr:
+                            lines.append(f"- [Polymarket]{v_tag} {q} -> " + ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(oc, pr)]))
+        except Exception: pass
+    try:
+        k_host = ".".join(["api", "elections", "kalshi", "com"])
+        rk = requests.get(f"https://{k_host}/trade-api/v2/markets?status=open&limit=40", headers=HEADERS, timeout=6)
+        if rk.status_code == 200:
+            for m in rk.json().get("markets", []):
+                title = m.get("title", "")
+                if any(w in title.lower() for w in ("nba", "nhl", "mlb", "soccer", "premier league", "champions", "esports", "cs2", "dota")):
+                    yes_p = m.get("yes_bid", 0)
+                    vol = m.get("volume", 0)
+                    if yes_p and vol > 100:
+                        lines.append(f"- [Kalshi | Объём {vol}] {title} -> Да: {yes_p}%")
+    except Exception: pass
+    try:
+        sx_host = ".".join(["api", "sx", "bet"])
+        rs = requests.get(f"https://{sx_host}/markets/active?onlyMainLines=true", headers=HEADERS, timeout=6)
+        if rs.status_code == 200:
+            for m in rs.json().get("data", {}).get("markets", [])[:15]:
+                t1, t2 = m.get("teamOneName", ""), m.get("teamTwoName", "")
+                if t1 and t2:
+                    lines.append(f"- [SX Bet Биржа] {t1} — {t2} ({m.get('sportLabel', '')})")
+    except Exception: pass
+    print(f"Биржи китов (Polymarket + Kalshi + SX Bet): {len(lines)} рынков")
+    return "\n".join(lines[:18])
 
 def get_all_sources(include_prematch=True, auto_banned=None, odds_mem=None):
     out = []
@@ -241,30 +300,10 @@ def get_all_sources(include_prematch=True, auto_banned=None, odds_mem=None):
     if pin_txt: out.append("=== ЛИНИЯ PINNACLE (БЕЗ МАРЖИ, STEAM-ПРОГРУЗЫ И 322) ===\n" + pin_txt)
     if include_prematch:
         soft_txt = get_soft_books_consensus()
-        if soft_txt: out.append("=== СВЕРКА ОСТРЫХ И МЯГКИХ БК ===\n" + soft_txt)
-        pm_list, pm_host = [], ".".join(["gamma-api", "polymarket", "com"])
-        allow_pm = ("soccer", "football", "nba", "basketball", "nhl", "hockey", "mlb", "baseball", "volleyball", "handball", "counter-strike", "cs2", "dota", "league of legends", "lol")
-        for tag in ["sports", "esports"]:
-            try:
-                r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=35", headers=HEADERS, timeout=10)
-                if r.status_code == 200:
-                    for ev in r.json():
-                        if not any(k in (ev.get("title", "") + " " + ev.get("slug", "")).lower() for k in allow_pm): continue
-                        vol = float(ev.get("volume24hr") or ev.get("volume") or 0)
-                        vol_tag = f" [КИТЫ: ${int(vol):,}]" if vol >= 10000 else (f" [Объём: ${int(vol):,}]" if vol > 500 else "")
-                        for m in ev.get("markets", [])[:2]:
-                            q = m.get("question", ev.get("title", ""))
-                            oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
-                            pr = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
-                            if q and len(oc) == len(pr) and pr:
-                                line = f"- [{tag}]{vol_tag} {q} -> " + ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(oc, pr)])
-                                if line not in pm_list: pm_list.append(line)
-            except Exception:
-                pass
-        print(f"Polymarket (киты и объёмы): {len(pm_list)} рынков")
-        if pm_list: out.append("=== POLYMARKET (ДЕНЬГИ КИТОВ) ===\n" + "\n".join(pm_list[:15]))
+        if soft_txt: out.append("=== СВЕРКА ОСТРЫХ БК/БИРЖ И МЯГКИХ БК ===\n" + soft_txt)
+        whale_txt = get_whale_exchanges()
+        if whale_txt: out.append("=== ДЕНЬГИ КИТОВ (POLYMARKET, KALSHI, SX BET) ===\n" + whale_txt)
     return "\n\n".join(out), exact_map
-
 def ask_ai(prompt):
     for circle in range(1, 4):
         cur_prompt = prompt if circle == 1 else prompt[:11000]
@@ -276,7 +315,10 @@ def ask_ai(prompt):
                 mr = requests.get(f"{g_base}/models", headers=hdr, timeout=8)
                 if mr.status_code == 200:
                     bad = ("whisper", "tts", "guard", "orpheus", "embed", "vision", "safeguard")
-                    models = sorted([x["id"] for x in mr.json().get("data", []) if not any(b in x["id"].lower() for b in bad)], key=lambda s: (0 if "120b" in s else 1 if "70b" in s else 2 if any(k in s for k in ("32b", "27b", "20b")) else 3))
+                    models = sorted(
+                        [x["id"] for x in mr.json().get("data", []) if not any(b in x["id"].lower() for b in bad)],
+                        key=lambda s: (0 if "120b" in s else 1 if "70b" in s else 2 if any(k in s for k in ("32b", "27b", "20b")) else 3)
+                    )
                     for gm in models:
                         try:
                             r = requests.post(f"{g_base}/chat/completions", headers=hdr, json={"model": gm, "messages": [{"role": "user", "content": cur_prompt}], "temperature": 0.2}, timeout=20)
@@ -287,6 +329,7 @@ def ask_ai(prompt):
                                     return txt
                         except Exception: continue
             except Exception: pass
+
         g_list = ["gemma-3-27b-it", "gemini-2.5-flash", "gemini-2.0-flash", "gemma-3-12b-it", "gemma-3-4b-it"]
         try:
             mr = requests.get(f"{GEM_HOST}/v1beta/models?key={GEMINI_API_KEY}", timeout=8)
@@ -294,8 +337,10 @@ def ask_ai(prompt):
                 skip = ("embed", "imagen", "veo", "aqa", "tts", "robotics", "computer", "research", "lite", "exp", "preview", "pro")
                 for m in mr.json().get("models", []):
                     nm = m["name"].replace("models/", "")
-                    if "generateContent" in m.get("supportedGenerationMethods", []) and not any(s in nm.lower() for s in skip) and nm not in g_list: g_list.append(nm)
+                    if "generateContent" in m.get("supportedGenerationMethods", []) and not any(s in nm.lower() for s in skip) and nm not in g_list:
+                        g_list.append(nm)
         except Exception: pass
+
         for gm in g_list:
             try:
                 r = requests.post(f"{GEM_HOST}/v1beta/models/{gm}:generateContent?key={GEMINI_API_KEY}", json={"contents": [{"parts": [{"text": cur_prompt}]}], "generationConfig": {"temperature": 0.2}}, timeout=25)
@@ -305,6 +350,7 @@ def ask_ai(prompt):
                         print(f"ИИ (круг {circle}, Google {gm}) ответил: {len(txt)} симв.")
                         return txt
             except Exception: continue
+
         p_url = "https://" + ".".join(["text", "pollinations", "ai"]) + "/openai"
         for pm in ["openai", "mistral", "deepseek"]:
             try:
@@ -402,6 +448,32 @@ def check_results(history, rules):
                 upd = True
         except Exception: pass
     return history, rules, upd
+SPORT_SITES = {
+    "cs": "hltv.org bo3.gg liquipedia.net strafe.com escharts.com",
+    "dota": "sentrybot.io dltv.org dotabuff.com stratz.com liquipedia.net hawk.live",
+    "lol": "gol.gg oracleselixir.com liquipedia.net strafe.com",
+    "foot": "fbref.com understat.com whoscored.com sofascore.com flashscore.com forebet.com smart-tables.ru 24score.pro corner-stats.com footystats.org fctables.com nb-bet.com injuriesandsuspensions.com transfermarkt.com football-lineups.com worldreferee.com",
+    "hock": "dailyfaceoff.com moneypuck.com naturalstattrick.com eliteprospects.com progsport.com betql.co khl.ru vhlru.ru nhl.com allhockey.ru flashscore.com",
+    "bask": "progsport.com betql.co rotowire.com basketball-reference.com euroleaguebasketball.net vtb-league.com injuriesandsuspensions.com sofascore.com",
+    "base": "rotowire.com fangraphs.com ://mlb.com baseball-reference.com betql.co",
+    "voll": "volleybox.net volleyballstats247.com cev.eu volley.ru flashscore.com sofascore.com",
+    "hand": "eurohandball.com ihf.info handball-world.news rushandball.ru flashscore.com sofascore.com"
+}
+FLOW_SITES = "bet-mate.co arbworld.net oddsportal.com betexplorer.com oddspedia.com football-data.co.uk"
+CONSENSUS_SITES = "legalbet.ru stavka.tv vprognoze.ru bookmaker-ratings.ru metaratings.ru vseprosport.ru betonmobile.ru progsport.com blogabet.com bet-hub.com 2aix.ru"
+
+def get_sport_domains(league_str):
+    s = league_str.lower()
+    if any(k in s for k in ("counter", "cs2", "cs:")): return SPORT_SITES["cs"]
+    if "dota" in s: return SPORT_SITES["dota"]
+    if any(k in s for k in ("league of legends", "lol")): return SPORT_SITES["lol"]
+    if "хоккей" in s or "hockey" in s: return SPORT_SITES["hock"]
+    if "баскет" in s or "basket" in s: return SPORT_SITES["bask"]
+    if "бейсбол" in s or "baseball" in s: return SPORT_SITES["base"]
+    if "волей" in s or "volley" in s: return SPORT_SITES["voll"]
+    if "гандбол" in s or "handball" in s: return SPORT_SITES["hand"]
+    return SPORT_SITES["foot"]
+
 def build_league_memory(history):
     lg_stats = {}
     for b in history["bets"]:
@@ -424,13 +496,15 @@ def build_league_memory(history):
 
 def verify_candidate(orig_pair, m_name, league, pick, odds, init_prob, line_move_txt):
     y_cur = NOW_TLT.year
-    h2h_info = web_search(f"{orig_pair} {m_name} личные встречи H2H результаты {y_cur-1} {y_cur}", n=5)
-    form_info = web_search(f"{orig_pair} {m_name} последние матчи форма травмы {NOW_TLT.strftime('%B %Y')}", n=5)
-    fix_info = web_search(f"{orig_pair} 322 договорной матч match fixing", n=3)
+    domains = get_sport_domains(league)
+    top_doms = " ".join(domains.split()[:5])
+    h2h_info = web_search(f"{orig_pair} H2H head to head stats results {y_cur-1} {y_cur} {top_doms}", n=5, tl=None)
+    form_info = web_search(f"{orig_pair} recent matches form lineup injuries {top_doms}", n=5, tl="m")
+    flow_info = web_search(f"{orig_pair} dropping odds money way 322 prediction {FLOW_SITES} {CONSENSUS_SITES}", n=4, tl="w")
     prompt = (
         f"Ты риск-менеджер синдиката. Проверь и попытайся опровергнуть ставку: {m_name} ({orig_pair}) | Лига: {league} | «{pick}» @ {odds} (шанс {init_prob*100:.1f}%).\n"
-        f"Линия Pinnacle: {line_move_txt}\nH2H за год:\n{h2h_info}\nФорма за месяц:\n{form_info}\n322/Аномалии:\n{fix_info}\n"
-        f"Отклони (approve: false), если: 1) нет статистики по турниру/командам; 2) H2H за год или форма за месяц против ставки; 3) признаки 322 или рост кэфа против нас.\n"
+        f"Линия Pinnacle: {line_move_txt}\nСтатистика и H2H ({top_doms}):\n{h2h_info}\nФорма и составы:\n{form_info}\nПотоки денег, 322 и консенсус:\n{flow_info}\n"
+        f"Отклони (approve: false), если: 1) вообще нет статистики по командам/турниру; 2) H2H за год или форма за месяц против ставки; 3) вылет лидеров/вратаря, признаки 322/EGB-аномалий или рост кэфа против нас.\n"
         f"Верни JSON: {{\"approve\": true|false, \"final_prob\": 0.57, \"reason\": \"1 короткое предложение\"}}"
     )
     raw = ask_ai(prompt)
@@ -446,13 +520,13 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
     taken_orig = {b.get("orig_match", "") for b in history["bets"] if b.get("orig_match")}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
     tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
-    q_teams = " ".join(list({v[1] for v in exact_map.values()})[:3])
-    s1 = web_search(f"{q_teams} статистика форма прогноз {d_str} {tom_str}", n=5)
+    q_teams = " ".join(list({v for v in exact_map.values()})[:3])
+    s1 = web_search(f"{q_teams} статистика форма прогноз {d_str} {tom_str} {CONSENSUS_SITES}", n=5, tl="w")
     mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem}\n" if league_mem else ""
     prompt = (
-        f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules}\n{mem_block}\n{mkt_txt}\n\nФорма:\n{s1}\n\n"
+        f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules}\n{mem_block}\n{mkt_txt}\n\nФорма и прогнозы:\n{s1}\n\n"
         f"Отбери 0–4 лучших кандидата (прематч 4ч от {t_str} и стабильный [LIVE]; исключи: {list(taken)}) по 9 дисциплинам (Баскетбол, Бейсбол, Волейбол, Гандбол, CS2, Dota 2, LoL, Футбол, Хоккей), кэфы 1.60–2.45.\n"
-        f"Ищи [🔥ПРОГРУЗ], перекос с мягкими БК и китов Polymarket; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Переведи команды и лигу на русский.\n"
+        f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Переведи команды и лигу на русский.\n"
         f"Верни JSON-массив: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точная ставка\", \"prob\": 0.58}}]."
     )
     raw = ask_ai(prompt)
@@ -506,7 +580,19 @@ def generate_web_table(history):
     wr = round(wins / len(done) * 100, 1) if done else 0.0
     diff, staked = history["bank"] - 10000, sum(b.get("stake_rub", 500) for b in done)
     roi = round((diff / staked) * 100, 1) if staked > 0 else 0.0
-    rows = []
+    avg_odd = round(sum(float(b.get("odds", 0)) for b in done) / len(done), 2) if done else 0.0
+
+    bal, curve = 10000.0, [10000.0]
+    for b in history["bets"]:
+        st, stake, odds = b.get("status"), b.get("stake_rub", 500), float(b.get("odds", 0))
+        if st == "WIN": bal += round(stake * (odds - 1.0)); curve.append(bal)
+        elif st == "LOSE": bal -= stake; curve.append(bal)
+    mn, mx = min(curve), max(curve)
+    span = (mx - mn) or 1.0
+    pts = " ".join([f"{round(i * 600 / max(1, len(curve) - 1), 1)},{round(110 - ((v - mn) / span) * 90, 1)}" for i, v in enumerate(curve)])
+    line_col = "#4ade80" if curve[-1] >= 10000 else "#f87171"
+
+    rows, sports_set = [], set()
     for b in reversed(history["bets"]):
         st, stake, odds = b.get("status", "PENDING"), b.get("stake_rub", 500), float(b.get("odds", 0))
         if st == "WIN": badge, cls, prof = "✅ Зашла", "win", f"+{round(stake * (odds - 1.0)):.0f} ₽"
@@ -514,9 +600,16 @@ def generate_web_table(history):
         elif st == "VOID": badge, cls, prof = "🔄 Возврат", "void", "0 ₽"
         else: badge, cls, prof = "⏳ В игре", "pend", "—"
         dt_txt = b.get("start_iso", "")[:16].replace("T", " ")
-        lg, mt, pk, sc = html.escape(b.get("league", "")), html.escape(b.get("match", "")), html.escape(b.get("pick", "")), html.escape(b.get("score", "") or "—")
-        rows.append(f"<tr data-st='{st}'><td>{dt_txt}</td><td>{lg}</td><td><b>{mt}</b></td><td>{pk}</td><td><b>{odds:.2f}</b></td><td>{sc}</td><td class='{cls}'>{badge}</td><td class='{cls}'><b>{prof}</b></td></tr>")
-    page = f"<!doctype html><html lang='ru'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Статистика канала</title><style>body{{font-family:system-ui,sans-serif;background:#0b1120;color:#e2e8f0;margin:0;padding:20px}}.wrap{{max-width:1100px;margin:0 auto}}h1{{font-size:20px;margin:0 0 16px}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}}.card{{background:#1e293b;padding:14px;border-radius:12px;border:1px solid #334155}}.card span{{font-size:12px;color:#94a3b8;display:block}}.card b{{font-size:20px;margin-top:4px;display:block}}.filters{{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}}button{{background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:7px 12px;border-radius:8px;cursor:pointer}}button.act{{background:#2563eb;border-color:#2563eb}}.tbl{{overflow-x:auto;background:#1e293b;border-radius:12px;border:1px solid #334155}}table{{width:100%;border-collapse:collapse;font-size:14px}}th,td{{padding:11px 12px;text-align:left;border-bottom:1px solid #334155}}th{{color:#94a3b8;background:#162032}}.win{{color:#4ade80}}.lose{{color:#f87171}}.pend{{color:#fbbf24}}.void{{color:#94a3b8}}</style></head><body><div class='wrap'><h1>📊 Журнал сигналов (обновлено {NOW_TLT.strftime('%d.%m.%Y %H:%M')})</h1><div class='cards'><div class='card'><span>Банк</span><b>{int(history['bank']):,} ₽</b></div><div class='card'><span>Профит</span><b>{diff:+.0f} ₽</b></div><div class='card'><span>ROI</span><b>{roi:+.1f}%</b></div><div class='card'><span>Винрейт</span><b>{wr}% ({wins}/{losses})</b></div></div><div class='filters'><button class='act' onclick=\"flt('ALL',this)\">Все</button><button onclick=\"flt('WIN',this)\">✅ Зашли</button><button onclick=\"flt('LOSE',this)\">❌ Минус</button><button onclick=\"flt('PENDING',this)\">⏳ В игре</button></div><div class='tbl'><table><thead><tr><th>Время</th><th>Лига</th><th>Матч</th><th>Исход</th><th>Кэф</th><th>Счёт</th><th>Статус</th><th>Итог</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></div><script>function flt(s,b){{document.querySelectorAll('button').forEach(x=>x.classList.remove('act'));b.classList.add('act');document.querySelectorAll('tbody tr').forEach(r=>{{r.style.display=(s==='ALL'||r.dataset.st===s)?'':'none'}})}}</script></body></html>"
+        lg_raw = b.get("league", "")
+        sp_raw = next(iter(lg_raw.split("•"))).strip() if "•" in lg_raw else "Спорт"
+        sports_set.add(sp_raw)
+        lg, sp, mt, pk, sc = html.escape(lg_raw), html.escape(sp_raw), html.escape(b.get("match", "")), html.escape(b.get("pick", "")), html.escape(b.get("score", "") or "—")
+        ev_v = b.get("ev", 0)
+        ev_txt = f"+{ev_v:.1f}%" if ev_v else "—"
+        rows.append(f"<tr data-st='{st}' data-sp='{sp}'><td>{dt_txt}</td><td>{lg}</td><td><b>{mt}</b></td><td>{pk}</td><td><b>{odds:.2f}</b></td><td>{ev_txt}</td><td>{sc}</td><td class='{cls}'>{badge}</td><td class='{cls}'><b>{prof}</b></td></tr>")
+
+    sp_btns = "".join([f"<button class='spb' onclick=\"fltSp('{html.escape(s)}',this)\">{html.escape(s)}</button>" for s in sorted(sports_set)])
+    page = f"<!doctype html><html lang='ru'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Аналитика и статистика ставок</title><style>body{{font-family:system-ui,-apple-system,sans-serif;background:#090e1a;color:#e2e8f0;margin:0;padding:18px}}.wrap{{max-width:1160px;margin:0 auto}}h1{{font-size:20px;margin:0 0 14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}}h1 small{{font-size:13px;color:#94a3b8;font-weight:400}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}}.card{{background:linear-gradient(145deg,#162033,#1e293b);padding:14px;border-radius:14px;border:1px solid #334155}}.card span{{font-size:12px;color:#94a3b8;display:block}}.card b{{font-size:21px;margin-top:4px;display:block}}.chart{{background:#162033;border:1px solid #334155;border-radius:14px;padding:14px;margin-bottom:16px}}.chart-h{{font-size:13px;color:#94a3b8;margin-bottom:8px;display:flex;justify-content:space-between}}svg{{width:100%;height:110px;display:block}}.bar{{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}}button{{background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}}button.act{{background:#2563eb;color:#fff;border-color:#2563eb}}.tbl{{overflow-x:auto;background:#162033;border-radius:14px;border:1px solid #334155}}table{{width:100%;border-collapse:collapse;font-size:13.5px}}th,td{{padding:11px 12px;text-align:left;border-bottom:1px solid #263349}}th{{color:#94a3b8;background:#0f172a;font-weight:600}}tr:hover{{background:#1e293b}}.win{{color:#4ade80}}.lose{{color:#f87171}}.pend{{color:#fbbf24}}.void{{color:#94a3b8}}</style></head><body><div class='wrap'><h1>📊 Журнал сигналов и аналитика <small>Обновлено {NOW_TLT.strftime('%d.%m.%Y %H:%M')} • 70+ источников</small></h1><div class='cards'><div class='card'><span>Текущий банк</span><b>{int(history['bank']):,} ₽</b></div><div class='card'><span>Чистый профит</span><b class='{'win' if diff>=0 else 'lose'}'>{diff:+.0f} ₽</b></div><div class='card'><span>ROI / Ср. кэф</span><b>{roi:+.1f}% • {avg_odd:.2f}</b></div><div class='card'><span>Винрейт</span><b>{wr}% ({wins}✅ / {losses}❌)</b></div></div><div class='chart'><div class='chart-h'><span>📈 Кривая роста банка (старт 10 000 ₽)</span><span>Мин: {int(mn):,} ₽ • Макс: {int(mx):,} ₽</span></div><svg viewBox='0 0 600 120' preserveAspectRatio='none'><polyline fill='none' stroke='{line_col}' stroke-width='3' points='{pts}'/></svg></div><div class='bar'><button class='stb act' onclick=\"fltSt('ALL',this)\">Все статусы</button><button class='stb' onclick=\"fltSt('WIN',this)\">✅ Зашли</button><button class='stb' onclick=\"fltSt('LOSE',this)\">❌ Минус</button><button class='stb' onclick=\"fltSt('PENDING',this)\">⏳ В игре</button></div><div class='bar'><button class='spb act' onclick=\"fltSp('ALL',this)\">Все виды спорта</button>{sp_btns}</div><div class='tbl'><table><thead><tr><th>Время</th><th>Лига</th><th>Матч</th><th>Исход</th><th>Кэф</th><th>Перевес</th><th>Счёт</th><th>Статус</th><th>Итог</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></div><script>let curSt='ALL',curSp='ALL';function apply(){{document.querySelectorAll('tbody tr').forEach(r=>{{const ok1=(curSt==='ALL'||r.dataset.st===curSt);const ok2=(curSp==='ALL'||r.dataset.sp===curSp);r.style.display=(ok1&&ok2)?'':'none'}})}}function fltSt(s,b){{curSt=s;document.querySelectorAll('.stb').forEach(x=>x.classList.remove('act'));b.classList.add('act');apply()}}function fltSp(s,b){{curSp=s;document.querySelectorAll('.spb').forEach(x=>x.classList.remove('act'));b.classList.add('act');apply()}}</script></body></html>"
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(page)
 
