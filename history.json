@@ -233,6 +233,33 @@
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Marte Soyapango — Independiente FC",
+      "orig_match": "Marte Soyapango — Independiente FC",
+      "league": "Футбол • El Salvador – Liga de Ascenso",
+      "start_iso": "2026-11-27T05:00:00+04:00",
+      "pick": "Ф2 (-0.25)",
+      "odds": 1.99,
+      "prob": 0.538,
+      "ev": 6.95,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Jaguares de Nayarit — Naranjeros de Hermosillo",
+      "orig_match": "Jaguares de Nayarit — Naranjeros de Hermosillo",
+      "league": "Бейсбол • Mexican Pacific League",
+      "start_iso": "2026-11-27T06:30:00+04:00",
+      "pick": "Победа К1 (с ОТ)",
+      "odds": 2.07,
+      "prob": 0.533,
+      "ev": 10.27,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
     }
-  ]
+  ],
+  "pin_msg_id": 61
 }
