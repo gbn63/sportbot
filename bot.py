@@ -434,8 +434,9 @@ def check_results(history, rules):
                 h_sc, a_sc = int(res["home_score"]), int(res["away_score"])
                 mult = settle_bet_math(bet["pick"], h_sc, a_sc)
                 if mult is None: continue
-                m_ru = str(res.get("match_ru") or bet["match"]).strip()
-                bet["match"], bet["score"] = m_ru, f"{h_sc} : {a_sc}"
+                m_ru = bet["match"]
+                bet["score"] = f"{h_sc} : {a_sc}"
+
                 stake = bet.get("stake_rub", 500)
                 if mult > 0: bet["status"], prof, head = "WIN", round(stake * (bet["odds"] - 1.0) * mult, 0), "✅ <b>СТАВКА ЗАШЛА</b>"
                 elif mult == 0: bet["status"], prof, head = "VOID", 0, "🔄 <b>ВОЗВРАТ СТАВКИ</b>"
@@ -503,14 +504,17 @@ def build_league_memory(history):
 
 def verify_candidate(orig_pair, m_name, league, pick, odds, init_prob, line_move_txt):
     y_cur = NOW_TLT.year
-    domains = get_sport_domains(league)
-    top_doms = " ".join(domains.split()[:5])
-    h2h_info = web_search(f"{orig_pair} H2H head to head stats results {y_cur-1} {y_cur} {top_doms}", n=5, tl=None)
-    form_info = web_search(f"{orig_pair} recent matches form lineup injuries {top_doms}", n=5, tl="m")
-    flow_info = web_search(f"{orig_pair} dropping odds money way 322 prediction {FLOW_SITES} {CONSENSUS_SITES}", n=4, tl="w")
+    q_match = orig_pair.replace(" — ", " vs ")
+    domains = get_sport_domains(league).split()
+    main_site = domains[0] if domains else ""
+    h2h_info = web_search(f"{q_match} H2H head to head results {y_cur - 1} {y_cur} {main_site}", n=5, tl=None)
+    form_info = web_search(f"{q_match} stats form lineup injuries {main_site}", n=5, tl="m")
+    flow_info = web_search(f"{q_match} odds prediction stats", n=4, tl="w")
+
+
     prompt = (
         f"Ты риск-менеджер синдиката. Проверь и попытайся опровергнуть ставку: {m_name} ({orig_pair}) | Лига: {league} | «{pick}» @ {odds} (шанс {init_prob*100:.1f}%).\n"
-        f"Линия Pinnacle: {line_move_txt}\nСтатистика и H2H ({top_doms}):\n{h2h_info}\nФорма и составы:\n{form_info}\nПотоки денег, 322 и консенсус:\n{flow_info}\n"
+        f"Линия Pinnacle: {line_move_txt}\nСтатистика и H2H ({main_site}):\n{h2h_info}\nФорма и составы:\n{form_info}\nПотоки денег, 322 и консенсус:\n{flow_info}\n"
         f"Отклони (approve: false), если: 1) вообще нет статистики по командам/турниру; 2) H2H за год или форма за месяц против ставки; 3) вылет лидеров/вратаря, признаки 322/EGB-аномалий или рост кэфа против нас.\n"
         f"Верни JSON: {{\"approve\": true|false, \"final_prob\": 0.57, \"reason\": \"1 короткое предложение\"}}"
     )
@@ -527,22 +531,24 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
     taken_orig = {b.get("orig_match", "") for b in history["bets"] if b.get("orig_match")}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
     tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
-    q_teams = " ".join(
+        q_teams = " ".join(
         list(
             {
-                str(v[0]) if isinstance(v, (tuple, list)) and v else str(v)
-
+                str(v[1]).replace(" — ", " vs ")
                 for v in exact_map.values()
+                if isinstance(v, (tuple, list)) and len(v) > 1
             }
         )[:3]
     )
+    s1 = web_search(f"{q_teams} stats form odds {d_str} {tom_str}", n=5, tl="w")
 
-    s1 = web_search(f"{q_teams} статистика форма прогноз {d_str} {tom_str} {CONSENSUS_SITES}", n=5, tl="w")
+
+    
     mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem}\n" if league_mem else ""
     prompt = (
         f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules}\n{mem_block}\n{mkt_txt}\n\nФорма и прогнозы:\n{s1}\n\n"
         f"Отбери 0–4 лучших кандидата (прематч 4ч от {t_str} и стабильный [LIVE]; исключи: {list(taken)}) по 9 дисциплинам (Баскетбол, Бейсбол, Волейбол, Гандбол, CS2, Dota 2, LoL, Футбол, Хоккей), кэфы 1.60–2.45.\n"
-        f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Переведи команды и лигу на русский.\n"
+        f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Названия команд и лиги оставь строго на языке оригинала из линии БК (без перевода).\n"
         f"Верни JSON-массив: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точная ставка\", \"prob\": 0.58}}]."
     )
     raw = ask_ai(prompt)
@@ -551,32 +557,36 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
         print("JSON parse err:", e, raw[:120])
         return history, False
     upd = False
-    for c in cands[:4]:
-        try:
-            mid, pick_exact, m_name = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\""), str(c.get("match", "")).strip()
-            if not m_name or m_name in taken or (mid, pick_exact) not in exact_map: continue
-            odds, orig_pair, start_iso, is_live, sc_val, raw_lg, true_p, open_d, drop_pct = exact_map[(mid, pick_exact)]
-            if orig_pair in taken_orig or not (1.58 <= odds <= 2.45) or drop_pct <= -4.5 or drop_pct >= 20.0: continue
-            line_move = f"прогруз -{drop_pct}% (с {open_d} до {odds}), без маржи {true_p*100:.1f}%" if drop_pct >= 3.5 else f"стабилен ({odds}), без маржи {true_p*100:.1f}%"
-            init_prob = round(float(c["prob"]) * 0.70 + true_p * 0.30, 3)
-            if init_prob < 0.52: continue
-            approved, crit_prob, reason = verify_candidate(orig_pair, m_name, c.get("league", ""), pick_exact, odds, init_prob, line_move)
-            final_prob = round(crit_prob * 0.75 + true_p * 0.25 + (0.015 if drop_pct >= 4.0 else 0.0), 3)
-            ev = calc_ev(final_prob, odds)
-            if not approved or final_prob < 0.55 or ev < 4.5:
-                print(f"Критик отклонил: {m_name} | {pick_exact} @ {odds} (шанс {final_prob*100:.1f}%, EV {ev}%) -> {reason}")
+            for c in cands[:4]:
+                try:
+            mid, pick_exact = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\"")
+            if (mid, pick_exact) not in exact_map:
                 continue
-            print(f"Одобрено критиком [{'LIVE' if is_live else 'PRE'}]: {m_name} | {pick_exact} @ {odds} | шанс={final_prob*100:.1f}% -> EV={ev}% ({reason})")
-            fair_odds, min_odds = round(1.0 / final_prob, 2), round(1.03 / final_prob, 2)
-            rel = "Высокая (3/3)" if (ev >= 7.0 and final_prob >= 0.57) else "Хорошая (2/3)"
-            st, lg_str = datetime.datetime.fromisoformat(start_iso), c.get("league", "")
-            sc_part = f" • счёт {sc_val}" if sc_val else ""
-            time_line = f"🔴 <b>LIVE • Идёт матч</b> <i>(старт {st.strftime('%H:%M')}{sc_part})</i>" if is_live else f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}"
+            odds, orig_pair, start_iso, is_live, sc_val, raw_lg, true_p, open_d, drop_pct = exact_map[(mid, pick_exact)]
+            m_name = orig_pair
+            if m_name in taken or orig_pair in taken_orig or not (1.58 <= odds <= 2.45) or drop_pct <= -4.5 or drop_pct >= 20.0:
+                continue
+            sp_tag = next(iter(c.get("league", "").split("•"))).strip()
+            lg_str = f"{sp_tag} • {raw_lg}" if sp_tag and raw_lg else (raw_lg or c.get("league", ""))
+            init_prob = round(float(c["prob"]) * 0.70 + true_p * 0.30, 3)
+            if init_prob < 0.52:
+                continue
+            mv = f"прогруз -{drop_pct}% (с {open_d} до {odds})" if drop_pct >= 3.5 else f"стабилен ({odds})"
+            ok, crit_p, reason = verify_candidate(orig_pair, m_name, lg_str, pick_exact, odds, init_prob, mv)
+            final_prob = round(crit_p * 0.75 + true_p * 0.25 + (0.015 if drop_pct >= 4.0 else 0.0), 3)
+            ev = calc_ev(final_prob, odds)
+            if not ok or final_prob < 0.55 or ev < 4.5:
+                print(f"Критик отклонил: {m_name} | {pick_exact} @ {odds} (EV {ev}%) -> {reason}")
+                continue
+            st = datetime.datetime.fromisoformat(start_iso)
+            t_line = f"🔴 <b>LIVE</b> <i>(старт {st.strftime('%H:%M')})</i>" if is_live else f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}"
             history["bets"].append({"match": m_name, "orig_match": orig_pair, "league": lg_str, "orig_league": raw_lg, "start_iso": st.isoformat(), "is_live": is_live, "pick": pick_exact, "odds": odds, "prob": final_prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
-            send_tg(f"{sport_emoji(lg_str)} <b>{lg_str}</b>\n🆚 <b>{m_name}</b>\n{time_line}\n\n✅ Исход: <b>{pick_exact}</b>\n📈 Кэф в линии: <b>{odds:.2f}</b> <i>(честный: {fair_odds:.2f} | в Фонбете от {min_odds:.2f})</i>\n🔥 Перевес над линией: <b>+{ev:.1f}%</b> • Шанс захода: <b>{final_prob*100:.0f}%</b>\n⭐️ Надёжность: <b>{rel}</b>")
+            send_tg(f"{sport_emoji(lg_str)} <b>{lg_str}</b>\n🆚 <b>{m_name}</b>\n{t_line}\n\n✅ Исход: <b>{pick_exact}</b>\n📈 Кэф: <b>{odds:.2f}</b> <i>(в Фонбете от {round(1.03 / final_prob, 2):.2f})</i>\n🔥 Перевес: <b>+{ev:.1f}%</b> • Шанс: <b>{final_prob*100:.0f}%</b>")
             taken.add(m_name); taken_orig.add(orig_pair); upd = True
-        except Exception: continue
+              except Exception:
+            continue
     return history, upd
+
 def send_daily_report(history):
     today_str = NOW_TLT.strftime("%Y-%m-%d")
     if NOW_TLT.hour == 9 and history.get("last_report") != today_str:
