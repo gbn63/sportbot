@@ -572,16 +572,11 @@ def fetch_team_stats(team, league=""):
 def fetch_stats_router(orig_pair, league=""):
     parts = [p.strip() for p in orig_pair.split(" — ")]
     if len(parts) != 2: return "СТАТИСТИКА НЕ НАЙДЕНА"
-    out = [x for x in (fetch_team_stats(parts, league), fetch_team_stats(parts, league)) if x]
+    t1, t2 = parts
+    out = [x for x in (fetch_team_stats(t1, league), fetch_team_stats(t2, league)) if x]
     return "\n".join(out) if out else "СТАТИСТИКА НЕ НАЙДЕНА"
 
 
-
-def fetch_stats_router(orig_pair, league=""):
-    parts = [p.strip() for p in orig_pair.split(" — ")]
-    if len(parts) != 2: return "СТАТИСТИКА НЕ НАЙДЕНА"
-    out = [x for x in (fetch_team_stats(parts, league), fetch_team_stats(parts, league)) if x]
-    return "\n".join(out) if out else "СТАТИСТИКА НЕ НАЙДЕНА"
 def verify_candidate(orig_pair, m_name, league, pick, odds, init_prob, line_move_txt):
     y_cur = NOW_TLT.year
     q_match = orig_pair.replace(" — ", " vs ")
