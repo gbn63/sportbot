@@ -1,5 +1,5 @@
 {
-  "bank": 8000,
+  "bank": 7940.0,
   "bets": [
     {
       "match": "ФК Бангалор Юнайтед — Мегт энд Сентр",
@@ -91,13 +91,13 @@
       "league": "Киберспорт • Counter‑Strike",
       "start_iso": "2026-11-27T10:00:00+04:00",
       "is_live": false,
-      "pick": "Ф1 (+1.5)",
+      "pick": "Фора 1 (+1.5)",
       "odds": 1.88,
       "prob": 0.56,
       "ev": 4.83,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "WIN",
+      "score": "2 : 0"
     },
     {
       "match": "Thailand — Hong Kong",
@@ -114,18 +114,18 @@
       "score": ""
     },
     {
-      "match": "Bangalore Dream United — Bangalore City FC",
+      "match": "Бангладеш Дрим Юнайтед — Бангладеш Сити ФК",
       "orig_match": "Bangalore Dream United — Bangalore City FC",
       "league": "Футбол • India – Bangalore Super Division",
       "start_iso": "2026-11-27T09:30:00+04:00",
       "is_live": false,
-      "pick": "Ф1 (+1.25)",
+      "pick": "Ф1 (+1.25) (1.85)",
       "odds": 1.85,
       "prob": 0.563,
       "ev": 4.33,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "0 : 0"
     },
     {
       "match": "Леон — Круз Асуал",
@@ -170,6 +170,6 @@
       "score": ""
     }
   ],
-  "last_scan_ts": 1795763028.404818,
+  "last_scan_ts": 1795768415.728461,
   "pin_msg_id": 67
 }
