@@ -110,7 +110,8 @@ def web_search(q, n=5, tl="d"):
             res = d.text(q, timelimit=tl, max_results=n) if tl else d.text(q, max_results=n)
             return "\n".join([f"- {r['title']}: {r['body']}" for r in res])
     except Exception as e:
-        return f"Search err: {e}"
+                return "Новостей в RSS нет."
+
 
 def am_to_dec(p):
     try:
@@ -514,22 +515,87 @@ def build_league_memory(history):
             lines.append(f"- [ОПЫТ] {lg_name}: {d['w']}W / {d['l']}L ({wr}%)")
     return banned, "\n".join(lines)
 
+
+
+def fetch_team_stats(team, league=""):
+    t_clean = re.sub(r"\b(HC|BK|IK|IF|HK|SK|FC|FK|BC|SC|AC|U20|U19|Team|Gaming|Esports)\b", "", team, flags=re.I).strip() or team
+    lg_l = league.lower()
+    hdr = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0", "Accept": "application/json"}
+    q_enc = requests.utils.quote(t_clean)
+    if any(k in lg_l for k in ("dota", "cs2", "counter", "league", "lol", "кибер")):
+        try:
+            if "dota" in lg_l:
+                                u_od = "".join(["https://", "api.", "://opendota.com"])
+
+                ts = requests.get(u_od, timeout=6).json()
+                tid = next((x["team_id"] for x in ts if t_clean.lower() in str(x.get("name", "")).lower()), None)
+                if tid:
+                    ms = requests.get(f"{u_od}/{tid}/matches", timeout=6).json()[:5]
+                    res = [f"{'W' if (m.get('radiant') == m.get('radiant_win')) else 'L'} vs {m.get('opposing_team_name','?')}" for m in ms]
+                    if res: return f"[OpenDota] {team}: " + ", ".join(res)
+            wiki = "dota2" if "dota" in lg_l else ("leagueoflegends" if ("lol" in lg_l or "league" in lg_l) else "counterstrike")
+            u_lq = "https://" + f"liquipedia.net/{wiki}/api.php?action=opensearch&search={q_enc}&limit=1&format=json"
+            lq = requests.get(u_lq, headers={"User-Agent": "SportBotStats/1.0"}, timeout=6).json()
+            if len(lq) > 3 and lq:
+                pg = requests.get("https://" + "r.jina.ai/" + lq, timeout=8).text[:650].replace("\n", " ")
+                if len(pg) > 80: return f"[Liquipedia] {team}: {pg}"
+        except Exception: pass
+    try:
+                u_sf = "".join(["https://", "api.", "://sofascore.com"])
+
+        r = requests.get(f"{u_sf}/search/all?q={q_enc}", headers=hdr, timeout=6)
+        if r.status_code == 200:
+            tid = next((x["entity"]["id"] for x in r.json().get("results", []) if x.get("type") == "team"), None)
+            if tid:
+                evs = requests.get(f"{u_sf}/team/{tid}/events/last/0", headers=hdr, timeout=6).json().get("events", [])[-5:]
+                ls = [f"{e['homeTeam']['name']} {e.get('homeScore',{}).get('display','?')}:{e.get('awayScore',{}).get('display','?')} {e['awayTeam']['name']}" for e in evs if e.get("status", {}).get("type") == "finished"]
+                if ls: return f"[Sofascore] {team}: " + " | ".join(ls)
+    except Exception: pass
+    try:
+                u_db = "".join(["https://", "www.", "://thesportsdb.com"])
+
+        r2 = requests.get(f"{u_db}/searchteams.php?t={q_enc}", timeout=6).json()
+        if r2.get("teams"):
+            tid2 = r2["teams"]["idTeam"]
+            ev2 = (requests.get(f"{u_db}/eventslast.php?id={tid2}", timeout=6).json().get("results") or [])[:5]
+            ls2 = [f"{e.get('strEvent')} ({e.get('intHomeScore')}:{e.get('intAwayScore')})" for e in ev2 if e.get("intHomeScore") is not None]
+            if ls2: return f"[SportsDB] {team}: " + " | ".join(ls2)
+    except Exception: pass
+    try:
+        site = "dltv.org" if "dota" in lg_l else ("hltv.org" if "cs" in lg_l else "flashscore.com")
+                u_px = "".join(["https://", "r.jina.ai/", "https://duckduckgo.com:", site, "+", q_enc, "+results"])
+
+        px = requests.get(u_px, timeout=8).text
+        lines = [ln.strip() for ln in px.splitlines() if t_clean.lower() in ln.lower() and any(ch.isdigit() for ch in ln)][:4]
+        if lines: return f"[Proxy-{site}] {team}: " + " | ".join(lines)[:450]
+    except Exception: pass
+    return ""
+
+def fetch_stats_router(orig_pair, league=""):
+    parts = [p.strip() for p in orig_pair.split(" — ")]
+    if len(parts) != 2: return "СТАТИСТИКА НЕ НАЙДЕНА"
+    out = [x for x in (fetch_team_stats(parts, league), fetch_team_stats(parts, league)) if x]
+    return "\n".join(out) if out else "СТАТИСТИКА НЕ НАЙДЕНА"
+
+
+def fetch_stats_router(orig_pair, league=""):
+    parts = [p.strip() for p in orig_pair.split(" — ")]
+    if len(parts) != 2: return "СТАТИСТИКА НЕ НАЙДЕНА"
+    out = [x for x in (fetch_team_stats(parts, league), fetch_team_stats(parts, league)) if x]
+    return "\n".join(out) if out else "СТАТИСТИКА НЕ НАЙДЕНА"
 def verify_candidate(orig_pair, m_name, league, pick, odds, init_prob, line_move_txt):
     y_cur = NOW_TLT.year
     q_match = orig_pair.replace(" — ", " vs ")
-    domains = get_sport_domains(league).split()
-    main_site = domains[0] if domains else ""
-    h2h_info = web_search(f"{q_match} H2H head to head results {y_cur - 1} {y_cur} {main_site}", n=5, tl=None)
-    form_info = web_search(f"{q_match} stats form lineup injuries {main_site}", n=5, tl="m")
-    flow_info = web_search(f"{q_match} odds prediction stats", n=4, tl="w")
-
-
+    api_stats = fetch_stats_router(orig_pair, league)
+    h2h_info = web_search(f"{q_match} preview injury lineup news", n=4, tl="m")
+    flow_info = web_search(f"{q_match} odds prediction", n=3, tl="w")
     prompt = (
-        f"Ты риск-менеджер синдиката. Проверь и попытайся опровергнуть ставку: {m_name} ({orig_pair}) | Лига: {league} | «{pick}» @ {odds} (шанс {init_prob*100:.1f}%).\n"
-        f"Линия Pinnacle: {line_move_txt}\nСтатистика и H2H ({main_site}):\n{h2h_info}\nФорма и составы:\n{form_info}\nПотоки денег, 322 и консенсус:\n{flow_info}\n"
-        f"Отклони (approve: false), если: 1) вообще нет статистики по командам/турниру; 2) H2H за год или форма за месяц против ставки; 3) вылет лидеров/вратаря, признаки 322/EGB-аномалий или рост кэфа против нас.\n"
+        f"Ты риск-менеджер синдиката. Проверь и попытайся опровергнуть ставку: {m_name} ({orig_pair}) | Лига: {league} | «{pick}» @ {odds} (шанс {init_prob*100:.1f}%)\n"
+        f"Линия Pinnacle: {line_move_txt}\nБаза последних матчей (роутер статистики):\n{api_stats}\nСвежие новости и составы:\n{h2h_info}\nКотировки и прогнозы:\n{flow_info}\n"
+        f"Отклони (approve: false), если: 1) форма или H2H из базы против ставки; 2) вылет лидеров/вратаря; 3) прогруз против нас. Запрещено выдумывать ничьи или H2H, если их нет в данных.\n"
         f"Верни JSON: {{\"approve\": true|false, \"final_prob\": 0.57, \"reason\": \"1 короткое предложение\"}}"
     )
+
     raw = ask_ai(prompt)
     try:
         res = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
