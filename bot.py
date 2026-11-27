@@ -433,7 +433,7 @@ def check_results(history, rules):
     upd, live_board = False, get_all_live_scores()
     for bet in history["bets"]:
         if bet["status"] != "PENDING": continue
-                st = datetime.datetime.fromisoformat(bet["start_iso"])
+        st = datetime.datetime.fromisoformat(bet["start_iso"])
         lg_low = bet.get("league", "").lower()
         min_h = 3.4 if ("baseball" in lg_low or "бейсбол" in lg_low) else (2.6 if ("hockey" in lg_low or "хоккей" in lg_low) else 2.5)
         if (NOW_TLT - st).total_seconds() / 3600.0 < min_h: continue
