@@ -1,5 +1,5 @@
 {
-  "bank": 10000,
+  "bank": 9500,
   "bets": [
     {
       "match": "FC Bengaluru United — Megt and Centre",
@@ -44,7 +44,7 @@
       "score": ""
     },
     {
-      "match": "Chalchuapa United — Santa Ana",
+      "match": "Чалчуапа Юнайтед — Санта-Ана",
       "orig_match": "Chalchuapa United — Santa Ana",
       "league": "Баскетбол • Сальвадор, Лига Майор",
       "start_iso": "2026-11-27T05:15:00+04:00",
@@ -54,8 +54,8 @@
       "prob": 0.554,
       "ev": 3.6,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "45 : 52"
     },
     {
       "match": "Jaguares de Nayarit — Naranjeros de Hermosillo",
@@ -70,8 +70,78 @@
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Jordan — New Zealand",
+      "orig_match": "Jordan — New Zealand",
+      "league": "Баскетбол • FIBA – World Cup Asia Qualification",
+      "start_iso": "2026-11-27T10:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+18.5) (с ОТ)",
+      "odds": 1.8,
+      "prob": 0.574,
+      "ev": 3.91,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Lynn Vision — HEROIC",
+      "orig_match": "Lynn Vision — HEROIC",
+      "league": "Киберспорт • Counter‑Strike",
+      "start_iso": "2026-11-27T10:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+1.5)",
+      "odds": 1.88,
+      "prob": 0.56,
+      "ev": 4.83,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Thailand — Hong Kong",
+      "orig_match": "Thailand — Hong Kong",
+      "league": "Гандбол • Asian Championship Women",
+      "start_iso": "2026-11-27T10:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+3.5)",
+      "odds": 1.89,
+      "prob": 0.552,
+      "ev": 4.52,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Bangalore Dream United — Bangalore City FC",
+      "orig_match": "Bangalore Dream United — Bangalore City FC",
+      "league": "Футбол • India – Bangalore Super Division",
+      "start_iso": "2026-11-27T09:30:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+1.25)",
+      "odds": 1.85,
+      "prob": 0.563,
+      "ev": 4.33,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Club Leon — Cruz Azul",
+      "orig_match": "Club Leon (Corners) — Cruz Azul (Corners)",
+      "league": "Футбол • Mexico – Liga MX",
+      "start_iso": "2026-11-27T07:10:00+04:00",
+      "is_live": true,
+      "pick": "ТБ (6.5)",
+      "odds": 1.78,
+      "prob": 0.59,
+      "ev": 5.1,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
     }
   ],
-  "last_scan_ts": 1795747813.109919,
+  "last_scan_ts": 1795751298.227601,
   "pin_msg_id": 67
 }
