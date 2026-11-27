@@ -558,34 +558,34 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
         print("JSON parse err:", e, raw[:120])
         return history, False
     upd = False
-            for c in cands[:4]:
-                try:
-            mid, pick_exact = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\"")
-            if (mid, pick_exact) not in exact_map:
-                continue
-            odds, orig_pair, start_iso, is_live, sc_val, raw_lg, true_p, open_d, drop_pct = exact_map[(mid, pick_exact)]
-            m_name = orig_pair
-            if m_name in taken or orig_pair in taken_orig or not (1.58 <= odds <= 2.45) or drop_pct <= -4.5 or drop_pct >= 20.0:
-                continue
-            sp_tag = next(iter(c.get("league", "").split("•"))).strip()
-            lg_str = f"{sp_tag} • {raw_lg}" if sp_tag and raw_lg else (raw_lg or c.get("league", ""))
-            init_prob = round(float(c["prob"]) * 0.70 + true_p * 0.30, 3)
-            if init_prob < 0.52:
-                continue
-            mv = f"прогруз -{drop_pct}% (с {open_d} до {odds})" if drop_pct >= 3.5 else f"стабилен ({odds})"
-            ok, crit_p, reason = verify_candidate(orig_pair, m_name, lg_str, pick_exact, odds, init_prob, mv)
-            final_prob = round(crit_p * 0.75 + true_p * 0.25 + (0.015 if drop_pct >= 4.0 else 0.0), 3)
-            ev = calc_ev(final_prob, odds)
-            if not ok or final_prob < 0.55 or ev < 4.5:
-                print(f"Критик отклонил: {m_name} | {pick_exact} @ {odds} (EV {ev}%) -> {reason}")
-                continue
-            st = datetime.datetime.fromisoformat(start_iso)
-            t_line = f"🔴 <b>LIVE</b> <i>(старт {st.strftime('%H:%M')})</i>" if is_live else f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}"
-            history["bets"].append({"match": m_name, "orig_match": orig_pair, "league": lg_str, "orig_league": raw_lg, "start_iso": st.isoformat(), "is_live": is_live, "pick": pick_exact, "odds": odds, "prob": final_prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
-            send_tg(f"{sport_emoji(lg_str)} <b>{lg_str}</b>\n🆚 <b>{m_name}</b>\n{t_line}\n\n✅ Исход: <b>{pick_exact}</b>\n📈 Кэф: <b>{odds:.2f}</b> <i>(в Фонбете от {round(1.03 / final_prob, 2):.2f})</i>\n🔥 Перевес: <b>+{ev:.1f}%</b> • Шанс: <b>{final_prob*100:.0f}%</b>")
-            taken.add(m_name); taken_orig.add(orig_pair); upd = True
-              except Exception:
+        for c in cands[:4]:
+            try:
+        mid, pick_exact = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\"")
+        if (mid, pick_exact) not in exact_map:
             continue
+        odds, orig_pair, start_iso, is_live, sc_val, raw_lg, true_p, open_d, drop_pct = exact_map[(mid, pick_exact)]
+        m_name = orig_pair
+        if m_name in taken or orig_pair in taken_orig or not (1.58 <= odds <= 2.45) or drop_pct <= -4.5 or drop_pct >= 20.0:
+            continue
+        sp_tag = next(iter(c.get("league", "").split("•"))).strip()
+        lg_str = f"{sp_tag} • {raw_lg}" if sp_tag and raw_lg else (raw_lg or c.get("league", ""))
+        init_prob = round(float(c["prob"]) * 0.70 + true_p * 0.30, 3)
+        if init_prob < 0.52:
+            continue
+        mv = f"прогруз -{drop_pct}% (с {open_d} до {odds})" if drop_pct >= 3.5 else f"стабилен ({odds})"
+        ok, crit_p, reason = verify_candidate(orig_pair, m_name, lg_str, pick_exact, odds, init_prob, mv)
+        final_prob = round(crit_p * 0.75 + true_p * 0.25 + (0.015 if drop_pct >= 4.0 else 0.0), 3)
+        ev = calc_ev(final_prob, odds)
+        if not ok or final_prob < 0.55 or ev < 4.5:
+            print(f"Критик отклонил: {m_name} | {pick_exact} @ {odds} (EV {ev}%) -> {reason}")
+            continue
+        st = datetime.datetime.fromisoformat(start_iso)
+        t_line = f"🔴 <b>LIVE</b> <i>(старт {st.strftime('%H:%M')})</i>" if is_live else f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}"
+        history["bets"].append({"match": m_name, "orig_match": orig_pair, "league": lg_str, "orig_league": raw_lg, "start_iso": st.isoformat(), "is_live": is_live, "pick": pick_exact, "odds": odds, "prob": final_prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
+        send_tg(f"{sport_emoji(lg_str)} <b>{lg_str}</b>\n🆚 <b>{m_name}</b>\n{t_line}\n\n✅ Исход: <b>{pick_exact}</b>\n📈 Кэф: <b>{odds:.2f}</b> <i>(в Фонбете от {round(1.03 / final_prob, 2):.2f})</i>\n🔥 Перевес: <b>+{ev:.1f}%</b> • Шанс: <b>{final_prob*100:.0f}%</b>")
+        taken.add(m_name); taken_orig.add(orig_pair); upd = True
+          except Exception:
+        continue
     return history, upd
 
 def send_daily_report(history):
