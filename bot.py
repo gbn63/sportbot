@@ -624,22 +624,23 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
         f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Названия команд и лиги оставь строго на языке оригинала из линии БК (без перевода).\n"
         f"Ответь ТОЛЬКО валидным JSON-массивом без приветствий и текста: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точная ставка\", \"prob\": 0.58}}]."
 
-    )
-        raw = ask_ai(prompt)
-        try:
+        )
+    raw = ask_ai(prompt)
+    try:
         st_idx = raw.find("[{")
         cands = json.loads(raw[st_idx:raw.rfind("]") + 1]) if st_idx != -1 else []
-        except Exception as e:
+    except Exception as e:
         print("JSON parse err:", e, raw[:120])
         return history, False
 
-        upd = False
-        for c in cands[:4]:
+    upd = False
+    for c in cands[:4]:
         try:
             mid, pick_exact = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\"")
             if (mid, pick_exact) not in exact_map:
                 continue
             odds, orig_pair, start_iso, is_live, sc_val, raw_lg, true_p, open_d, drop_pct = exact_map[(mid, pick_exact)]
+
             m_name = orig_pair
             if m_name in taken or orig_pair in taken_orig or not (1.58 <= odds <= 2.45) or drop_pct <= -4.5 or drop_pct >= 20.0:
                 continue
