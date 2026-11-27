@@ -626,7 +626,7 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
     mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem}\n" if league_mem else ""
     prompt = (
         f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules}\n{mem_block}\n{mkt_txt}\n\nФорма и прогнозы:\n{s1}\n\n"
-        f"Отбери 0–4 лучших кандидата (прематч 4ч от {t_str} и стабильный [LIVE]; исключи: {list(taken)}) по 9 дисциплинам (Баскетбол, Бейсбол, Волейбол, Гандбол, CS2, Dota 2, LoL, Футбол, Хоккей), кэфы 1.60–2.45.\n"
+        f"Отбери 1–4 лучших кандидата (прематч 4ч от {t_str} и стабильный [LIVE]; исключи: {list(taken)}) по 9 дисциплинам (Баскетбол, Бейсбол, Волейбол, Гандбол, CS2, Dota 2, LoL, Футбол, Хоккей), кэфы 1.60–2.45.\n"
         f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Названия команд и лиги оставь строго на языке оригинала из линии БК (без перевода).\n"
         f"Ответь ТОЛЬКО валидным JSON-массивом без приветствий и текста: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точная ставка\", \"prob\": 0.58}}]."
 
@@ -733,7 +733,7 @@ def main():
     odds_mem = history.setdefault("odds_tracker", {})
     is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
     now_ts, scan_ran = NOW_TLT.timestamp(), False
-    do_pre = is_manual or (now_ts - history.get("last_scan_ts", 0) >= 840)
+    do_pre = is_manual or (now_ts - history.get("last_scan_ts", 0) >= 240)
     if do_pre: history["last_scan_ts"], scan_ran = now_ts, True
     mkt_txt, exact_map = get_all_sources(include_prematch=do_pre, auto_banned=auto_banned, odds_mem=odds_mem)
     history, u2 = find_matches(history, rules, mkt_txt, exact_map, league_mem=league_mem)
