@@ -1,5 +1,5 @@
 {
-  "bank": 8500,
+  "bank": 8000,
   "bets": [
     {
       "match": "ФК Бангалор Юнайтед — Мегт энд Сентр",
@@ -16,18 +16,18 @@
       "score": "1 : 2"
     },
     {
-      "match": "Nankatsu — Aries Toshima",
+      "match": "Нанкацу — Ариес Тошима",
       "orig_match": "Nankatsu — Aries Toshima",
       "league": "Футбол • Япония, Региональная лига",
       "start_iso": "2026-11-27T08:30:00+04:00",
       "is_live": false,
-      "pick": "Ф1 (-0.25)",
+      "pick": "Фора 1 (-0.25)",
       "odds": 1.84,
       "prob": 0.556,
       "ev": 2.16,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "1 : 2"
     },
     {
       "match": "Gonzaga — Baylor",
@@ -170,6 +170,6 @@
       "score": ""
     }
   ],
-  "last_scan_ts": 1795758828.273895,
+  "last_scan_ts": 1795763028.404818,
   "pin_msg_id": 67
 }
