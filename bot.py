@@ -142,19 +142,29 @@ def format_pin_pick(sid, period, mtype, des, points):
         return f"{side} ({pv:g}){suf}" if side else ""
     return ""
 
-def get_pinnacle_feed():
-    now_ts, total_found, balanced, exact_map = NOW_TLT.timestamp(), 0, [], {}
+def get_pinnacle_feed(include_prematch=True):
+    now_ts, pre_found, live_found, pre_bal, live_bal, exact_map = NOW_TLT.timestamp(), 0, 0, [], [], {}
     pin = ".".join(["guest", "api", "arcadia", "pinnacle", "com"])
     sports = [(29, "Футбол"), (19, "Хоккей"), (4, "Баскетбол"), (3, "Бейсбол"), (34, "Волейбол"), (18, "Гандбол"), (12, "Киберспорт")]
     ban_words = ["u18", "u19", "youth", "friendly", "reserves", "юниор", "товар"]
     esports_ok = ["counter-strike", "cs2", "cs:", "dota", "league of legends", "lol"]
+    live_sports_ok = {29, 19, 12}
+
     for sid, sname in sports:
         try:
             rm = requests.get(f"https://{pin}/0.1/sports/{sid}/matchups?brandId=0", headers=HEADERS, timeout=8)
-            rp = requests.get(f"https://{pin}/0.1/sports/{sid}/markets/straight?primaryOnly=true&withSpecials=false", headers=HEADERS, timeout=8)
-            if rm.status_code != 200 or rp.status_code != 200:
+            if rm.status_code != 200:
                 continue
-            m_map, raw_pair = {}, {}
+            mk_list = []
+            rp_pre = requests.get(f"https://{pin}/0.1/sports/{sid}/markets/straight?primaryOnly=true&withSpecials=false", headers=HEADERS, timeout=8)
+            if rp_pre.status_code == 200:
+                mk_list.extend(rp_pre.json())
+            if sid in live_sports_ok:
+                rp_live = requests.get(f"https://{pin}/0.1/sports/{sid}/markets/live/straight?primaryOnly=true&withSpecials=false", headers=HEADERS, timeout=8)
+                if rp_live.status_code == 200:
+                    mk_list.extend(rp_live.json())
+
+            m_map, raw_pair, is_live_map = {}, {}, {}
             for m in rm.json():
                 st_iso = (m.get("startTime") or "").replace("Z", "+00:00")
                 parts = m.get("participants", [])
@@ -165,13 +175,24 @@ def get_pinnacle_feed():
                 if sid == 12 and not any(k in lg_low for k in esports_ok):
                     continue
                 st_dt = datetime.datetime.fromisoformat(st_iso).astimezone(NOW_TLT.tzinfo)
-                if 5 <= (st_dt.timestamp() - now_ts) / 60.0 <= 240:
-                    home = next((x.get("name") for x in parts if x.get("alignment") == "home"), next(iter(parts)).get("name", ""))
-                    away = next((x.get("name") for x in parts if x.get("alignment") == "away"), parts[-1].get("name", ""))
-                    m_map[m["id"]] = f"[ID:{m['id']}] [{st_dt.strftime('%d.%m %H:%M')}] {sname} ({lg}): К1={home} — К2={away}"
+                diff_min = (st_dt.timestamp() - now_ts) / 60.0
+                live_flag = bool(m.get("isLive") or m.get("liveMode") == "live" or (-115 <= diff_min < 0))
+                home = next((x.get("name") for x in parts if x.get("alignment") == "home"), next(iter(parts)).get("name", ""))
+                away = next((x.get("name") for x in parts if x.get("alignment") == "away"), parts[-1].get("name", ""))
+
+                if live_flag and sid in live_sports_ok and -115 <= diff_min <= 2:
+                    st_state = m.get("state", {})
+                    sc_txt = f" | Счёт: {st_state.get('homeScore', '?')}:{st_state.get('awayScore', '?')}" if "homeScore" in st_state else ""
+                    m_map[m["id"]] = f"[LIVE] [ID:{m['id']}] [Старт {st_dt.strftime('%H:%M')}] {sname} ({lg}): К1={home} — К2={away}{sc_txt}"
                     raw_pair[m["id"]] = (f"{home} — {away}", st_dt.isoformat())
+                    is_live_map[m["id"]] = True
+                elif include_prematch and not live_flag and 10 <= diff_min <= 240:
+                    m_map[m["id"]] = f"[PRE] [ID:{m['id']}] [{st_dt.strftime('%d.%m %H:%M')}] {sname} ({lg}): К1={home} — К2={away}"
+                    raw_pair[m["id"]] = (f"{home} — {away}", st_dt.isoformat())
+                    is_live_map[m["id"]] = False
+
             odds_map, good_map = {}, {}
-            for mk in rp.json():
+            for mk in mk_list:
                 mid = mk.get("matchupId")
                 if mid not in m_map:
                     continue
@@ -185,49 +206,60 @@ def get_pinnacle_feed():
                         if 1.60 <= dec <= 2.45:
                             good_map[mid] = True
                         plist.append(f"«{label}»={dec}")
-                        exact_map[(mid, label)] = (dec, raw_pair[mid][0], raw_pair[mid][1])
+                        pair_str, st_iso_str = raw_pair[mid]
+                        sc_val = m_map[mid].split("Счёт: ")[-1] if "Счёт: " in m_map[mid] else ""
+                        exact_map[(mid, label)] = (dec, pair_str, st_iso_str, is_live_map[mid], sc_val)
                 if plist:
                     odds_map.setdefault(mid, []).append(", ".join(plist))
-            sp_lines = []
+
+            sp_pre, sp_live = [], []
             for mid, title in m_map.items():
                 if mid in odds_map:
-                    total_found += 1
-                    if mid in good_map:
-                        sp_lines.append(f"{title} | Рынки: {' ; '.join(odds_map[mid][:4])}")
-            balanced.extend(sp_lines[:4])
+                    if is_live_map[mid]:
+                        live_found += 1
+                        if mid in good_map:
+                            sp_live.append(f"{title} | Рынки: {' ; '.join(odds_map[mid][:4])}")
+                    else:
+                        pre_found += 1
+                        if mid in good_map:
+                            sp_pre.append(f"{title} | Рынки: {' ; '.join(odds_map[mid][:4])}")
+            pre_bal.extend(sp_pre[:4])
+            live_bal.extend(sp_live[:3])
         except Exception:
             pass
-    print(f"Pinnacle (9 видов спорта): найдено {total_found}, отобрано {len(balanced)}")
-    return "\n".join(balanced[:28]), exact_map
-def get_all_sources():
+    print(f"Pinnacle: Прематч {pre_found} (отбор {len(pre_bal)}), Лайв {live_found} (отбор {len(live_bal)})")
+    lines = live_bal[:12] + pre_bal[:20]
+    return "\n".join(lines), exact_map
+def get_all_sources(include_prematch=True):
     out = []
-    pin_txt, exact_map = get_pinnacle_feed()
+    pin_txt, exact_map = get_pinnacle_feed(include_prematch=include_prematch)
     if pin_txt:
-        out.append("=== ЛИНИЯ PINNACLE (ТОЧНЫЕ РЫНКИ И КЭФЫ) ===\n" + pin_txt)
+        out.append("=== ЛИНИЯ PINNACLE (LIVE И ПРЕМАТЧ — ТОЧНЫЕ РЫНКИ И КЭФЫ) ===\n" + pin_txt)
 
-    pm_list, pm_host = [], ".".join(["gamma-api", "polymarket", "com"])
-    allow_pm = ("soccer", "football", "nba", "basketball", "nhl", "hockey", "mlb", "baseball", "volleyball", "handball", "counter-strike", "cs2", "dota", "league of legends", "lol")
-    for tag in ["sports", "esports"]:
-        try:
-            r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=30", headers=HEADERS, timeout=10)
-            if r.status_code == 200:
-                for ev in r.json():
-                    title_low = (ev.get("title", "") + " " + ev.get("slug", "")).lower()
-                    if not any(k in title_low for k in allow_pm):
-                        continue
-                    for m in ev.get("markets", [])[:2]:
-                        q = m.get("question", ev.get("title", ""))
-                        oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
-                        pr = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
-                        if q and len(oc) == len(pr) and pr:
-                            line = f"- [{tag}] {q} -> " + ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(oc, pr)])
-                            if line not in pm_list:
-                                pm_list.append(line)
-        except Exception:
-            pass
-    print(f"Polymarket (по списку спорта): {len(pm_list)} рынков")
-    if pm_list:
-        out.append("=== POLYMARKET (ОРИЕНТИР ВЕРОЯТНОСТЕЙ) ===\n" + "\n".join(pm_list[:15]))
+    if include_prematch:
+        pm_list, pm_host = [], ".".join(["gamma-api", "polymarket", "com"])
+        allow_pm = ("soccer", "football", "nba", "basketball", "nhl", "hockey", "mlb", "baseball", "volleyball", "handball", "counter-strike", "cs2", "dota", "league of legends", "lol")
+        for tag in ["sports", "esports"]:
+            try:
+                r = requests.get(f"https://{pm_host}/events?active=true&closed=false&tag_slug={tag}&limit=30", headers=HEADERS, timeout=10)
+                if r.status_code == 200:
+                    for ev in r.json():
+                        title_low = (ev.get("title", "") + " " + ev.get("slug", "")).lower()
+                        if not any(k in title_low for k in allow_pm):
+                            continue
+                        for m in ev.get("markets", [])[:2]:
+                            q = m.get("question", ev.get("title", ""))
+                            oc = json.loads(m.get("outcomes", "[]")) if isinstance(m.get("outcomes"), str) else m.get("outcomes", [])
+                            pr = json.loads(m.get("outcomePrices", "[]")) if isinstance(m.get("outcomePrices"), str) else m.get("outcomePrices", [])
+                            if q and len(oc) == len(pr) and pr:
+                                line = f"- [{tag}] {q} -> " + ", ".join([f"{o}: {round(float(p)*100, 1)}%" for o, p in zip(oc, pr)])
+                                if line not in pm_list:
+                                    pm_list.append(line)
+            except Exception:
+                pass
+        print(f"Polymarket (по списку спорта): {len(pm_list)} рынков")
+        if pm_list:
+            out.append("=== POLYMARKET (ОРИЕНТИР ВЕРОЯТНОСТЕЙ) ===\n" + "\n".join(pm_list[:15]))
     return "\n\n".join(out), exact_map
 
 def ask_ai(prompt):
@@ -380,8 +412,9 @@ def check_results(history, rules):
         except Exception:
             pass
     return history, rules, upd
-
 def find_matches(history, rules, mkt_txt, exact_map):
+    if not mkt_txt or not exact_map:
+        return history, False
     taken = {b["match"] for b in history["bets"]}
     taken_orig = {b.get("orig_match", "") for b in history["bets"] if b.get("orig_match")}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
@@ -392,8 +425,7 @@ def find_matches(history, rules, mkt_txt, exact_map):
         f"Ты опытный квантовый аналитик ставок. Пиши СТРОГО на русском языке.\n"
         f"Текущее время: {d_str} {t_str}. Правила:\n{rules}\n\n{mkt_txt}\n\n"
         f"НОВОСТИ И ПРОГНОЗЫ:\n{s1}\n{s2}\n\n"
-        f"Найди 2–6 лучших ставок из линии Pinnacle на ближайшие 4 часа от {t_str} (не позднее чем за 10 минут до старта, исключи взятые: {list(taken)}):\n"
-
+        f"Найди 2–6 лучших ставок из линии Pinnacle (прематч на ближайшие 4 часа от {t_str} и стабильный [LIVE] в перерыве/паузе между картами/при раннем отставании фаворита; исключи взятые: {list(taken)}):\n"
         f"• РАБОТАЕМ ТОЛЬКО ПО 9 ДИСЦИПЛИНАМ: Баскетбол, Бейсбол, Волейбол, Гандбол, Counter-Strike, Dota 2, League of Legends, Футбол, Хоккей.\n"
         f"• Кэфы от 1.60 до 2.45, реальный шанс захода от 50% и выше, перевес над линией от +2.0%.\n"
         f"• ЖЁСТКОЕ ПРАВИЛО ПО РЫНКАМ: в поле pick скопируй ТОЧНУЮ формулировку в кавычках из строки Рынки выбранного матча (например: «Ф1 (-2.5) (с ОТ)», «Победа К1 (с ОТ)», «ТБ (5.5) (осн. время)», «П2»), а в поле match_id вставь числовой ID из [ID:...]. Запрещено менять знак форы или пометку ОТ!\n"
@@ -414,7 +446,7 @@ def find_matches(history, rules, mkt_txt, exact_map):
             m_name = str(c.get("match", "")).strip()
             if not m_name or m_name in taken or (mid, pick_exact) not in exact_map:
                 continue
-            odds, orig_pair, start_iso = exact_map[(mid, pick_exact)]
+            odds, orig_pair, start_iso, is_live, sc_val = exact_map[(mid, pick_exact)]
             if orig_pair in taken_orig or not (1.58 <= odds <= 2.45):
                 continue
             raw_prob = float(c["prob"])
@@ -424,18 +456,21 @@ def find_matches(history, rules, mkt_txt, exact_map):
             if prob < 0.50 or ev < 2.0:
                 print(f"Отсеян фильтром 50%: {m_name} | {pick_exact} @ {odds} (шанс {prob*100:.1f}%, перевес {ev}%)")
                 continue
-            print(f"Принят моделью: {m_name} | {pick_exact} @ {odds} | шанс={prob*100:.1f}% -> перевес={ev}%")
+            mode_tag = "LIVE" if is_live else "PRE"
+            print(f"Принят моделью [{mode_tag}]: {m_name} | {pick_exact} @ {odds} | шанс={prob*100:.1f}% -> перевес={ev}%")
             fair_odds = round(1.0 / prob, 2)
             min_odds = round(1.03 / prob, 2)
             rel = "Высокая (3/3)" if (ev >= 6.0 and prob >= 0.54) else "Хорошая (2/3)"
             st = datetime.datetime.fromisoformat(start_iso)
             lg_str = c.get("league", "")
             ico = sport_emoji(lg_str)
-            history["bets"].append({"match": m_name, "orig_match": orig_pair, "league": lg_str, "start_iso": st.isoformat(), "pick": pick_exact, "odds": odds, "prob": prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
+            sc_part = f" • счёт {sc_val}" if sc_val else ""
+            time_line = f"🔴 <b>LIVE • Идёт матч</b> <i>(старт {st.strftime('%H:%M')}{sc_part})</i>" if is_live else f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}"
+            history["bets"].append({"match": m_name, "orig_match": orig_pair, "league": lg_str, "start_iso": st.isoformat(), "is_live": is_live, "pick": pick_exact, "odds": odds, "prob": prob, "ev": ev, "stake_rub": 500, "status": "PENDING", "score": ""})
             send_tg(
                 f"{ico} <b>{lg_str}</b>\n"
                 f"🆚 <b>{m_name}</b>\n"
-                f"⏰ {st.strftime('%d.%m.%Y • %H:%M')}\n\n"
+                f"{time_line}\n\n"
                 f"✅ Исход: <b>{pick_exact}</b>\n"
                 f"📈 Кэф в линии: <b>{odds:.2f}</b> <i>(честный: {fair_odds:.2f} | в Фонбете от {min_odds:.2f})</i>\n"
                 f"🔥 Перевес над линией: <b>+{ev:.1f}%</b> • Шанс захода: <b>{prob*100:.0f}%</b>\n"
@@ -469,22 +504,20 @@ def main():
     history, rules, u1 = check_results(history, rules)
     rep_sent = send_daily_report(history)
     is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    u2 = False
     now_ts, scan_ran = NOW_TLT.timestamp(), False
-    if is_manual or (now_ts - history.get("last_scan_ts", 0) >= 840):
+    do_pre = is_manual or (now_ts - history.get("last_scan_ts", 0) >= 840)
+    if do_pre:
         history["last_scan_ts"], scan_ran = now_ts, True
-
-        mkt_txt, exact_map = get_all_sources()
-        history, u2 = find_matches(history, rules, mkt_txt, exact_map)
+    mkt_txt, exact_map = get_all_sources(include_prematch=do_pre)
+    history, u2 = find_matches(history, rules, mkt_txt, exact_map)
     pin_upd = update_pinned_stats(history)
     if u1 or u2 or rep_sent or pin_upd or scan_ran:
-
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
             f.write(rules)
     if is_manual and not (u1 or u2):
-        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%d.%m.%Y %H:%M')})</b>\nВсе источники опрошены. Новых матчей по 9 выбранным дисциплинам пока нет.")
+        send_tg(f"🤖 <b>Система 5.0 MAX на связи ({NOW_TLT.strftime('%d.%m.%Y %H:%M')})</b>\nПрематч и лайв проверены. Новых матчей с перевесом пока нет.")
     print(f"Готово ({NOW_TLT.strftime('%d.%m.%Y %H:%M')}). Обновлено: {u1 or u2}")
 
 if __name__ == "__main__":
