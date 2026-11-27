@@ -94,6 +94,18 @@ def update_pinned_stats(history):
     return False
 def web_search(q, n=5, tl="d"):
     try:
+        import urllib.parse, urllib.request, xml.etree.ElementTree as ET
+        host = ".".join(["news", "google", "com"])
+        url = f"https://{host}/rss/search?q=" + urllib.parse.quote(q) + "&hl=en-US&gl=US&ceid=US:en"
+
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        xml_data = urllib.request.urlopen(req, timeout=8).read()
+        items = ET.fromstring(xml_data).findall(".//item")[:n]
+        if items:
+            return "\n".join([f"- {i.findtext('title', '')}" for i in items])
+    except Exception:
+        pass
+    try:
         with DDGS() as d:
             res = d.text(q, timelimit=tl, max_results=n) if tl else d.text(q, max_results=n)
             return "\n".join([f"- {r['title']}: {r['body']}" for r in res])
