@@ -1,4 +1,6 @@
 {
   "bank": 10000,
-  "bets": []
+  "bets": [],
+  "last_scan_ts": 1795740872.987459,
+  "pin_msg_id": 67
 }
