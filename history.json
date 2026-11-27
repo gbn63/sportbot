@@ -182,8 +182,50 @@
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Сирия — Филиппины",
+      "orig_match": "Syria — Philippines",
+      "league": "Баскетбол • Квалификация чемпионата мира ФИБА, Азия",
+      "start_iso": "2026-11-27T16:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф2 (-23) (с ОТ)",
+      "odds": 1.83,
+      "prob": 0.579,
+      "ev": 5.91,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Бешикташ Стамбул — Раймонд Сассари",
+      "orig_match": "Besiktas Istanbul — Raimond Sassari",
+      "league": "Гандбол • Европейский кубок",
+      "start_iso": "2026-11-27T18:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (-5.5)",
+      "odds": 1.82,
+      "prob": 0.572,
+      "ev": 4.34,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Динамо Загреб II — Хрваче",
+      "orig_match": "Dinamo Zagreb II — Hrvace",
+      "league": "Футбол • Хорватия, Первая лига",
+      "start_iso": "2026-11-27T16:30:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (-0.5)",
+      "odds": 1.98,
+      "prob": 0.531,
+      "ev": 5.22,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
     }
   ],
-  "last_scan_ts": 1795774998.848367,
+  "last_scan_ts": 1795776890.307487,
   "pin_msg_id": 67
 }
