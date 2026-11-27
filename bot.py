@@ -463,11 +463,15 @@ def main():
     rep_sent = send_daily_report(history)
     is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
     u2 = False
-    if is_manual or (NOW_TLT.minute % 15 < 5):
+    now_ts, scan_ran = NOW_TLT.timestamp(), False
+    if is_manual or (now_ts - history.get("last_scan_ts", 0) >= 840):
+        history["last_scan_ts"], scan_ran = now_ts, True
+
         mkt_txt, exact_map = get_all_sources()
         history, u2 = find_matches(history, rules, mkt_txt, exact_map)
     pin_upd = update_pinned_stats(history)
-    if u1 or u2 or rep_sent or pin_upd:
+    if u1 or u2 or rep_sent or pin_upd or scan_ran:
+
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
