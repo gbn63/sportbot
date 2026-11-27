@@ -339,11 +339,12 @@ def check_results(history, rules):
         q_name = bet.get("orig_match") or bet["match"]
         info = web_search(f"{bet['match']} {q_name} финальный счет результат FT Final {st.strftime('%d.%m.%Y')}")
         raw = ask_ai(
-            f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {bet['match']} ({q_name}). Ставка: {bet['pick']} ({bet['odds']}).\n"
+            f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {bet['match']} ({q_name}). Лига: {bet.get('league', '')}. Ставка: {bet['pick']} ({bet['odds']}).\n"
             f"Мировое табло:\n{live_board}\nПоиск:\n{info}\n\n"
             f"СТРОГОЕ ПРАВИЛО: Если матч ещё идёт или нет точного подтверждения окончания (Final / FT / Завершён) — верни status: PENDING!\n"
-            f"ПЕРЕВЕДИ НА РУССКИЙ названия команд (match_ru) и ставку (pick_ru). Обрати внимание на пометки (с ОТ) или (осн. время) в ставке!\n"
-            f"Верни JSON строго на русском: {{\"status\": \"WIN\"|\"LOSE\"|\"PENDING\", \"score\": \"Х : У\", \"match_ru\": \"Команда 1 — Команда 2\", \"pick_ru\": \"Ставка на русском\", \"lesson\": \"если LOSE — 1 короткий вывод для rules.txt, иначе пусто\"}}"
+            f"ПЕРЕВЕДИ НА РУССКИЙ названия команд (match_ru) и ставку (pick_ru).\n"
+            f"В поле lesson напиши 1 конкретное тактическое правило на будущее для этой лиги или рынка (например: «В бейсболе Мексики отлично заходят ТБ при кэфе 1.90+» или «Не брать чистую П2 на выезде в низших лигах»). СТРОГО ЗАПРЕЩЕНО пересказывать счёт или писать банальности вроде «ставка проиграла» или «хозяева победили»!\n"
+            f"Верни JSON строго на русском: {{\"status\": \"WIN\"|\"LOSE\"|\"PENDING\", \"score\": \"Х : У\", \"match_ru\": \"Команда 1 — Команда 2\", \"pick_ru\": \"Ставка на русском\", \"lesson\": \"конкретный вывод\"}}"
         )
         try:
             res = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
@@ -355,8 +356,13 @@ def check_results(history, rules):
                 stake = bet.get("stake_rub", 500)
                 prof = round(stake * (bet["odds"] - 1.0), 0) if res["status"] == "WIN" else -stake
                 history["bank"] = round(history["bank"] + prof, 0)
-                if res["status"] == "LOSE" and res.get("lesson"):
-                    rules += f"\n- Вывод ({NOW_TLT.strftime('%d.%m')}): {res['lesson']}"
+                lesson = str(res.get("lesson", "")).strip()
+                if lesson and len(lesson) > 15:
+                    tag = "Плюс-паттерн" if res["status"] == "WIN" else "Ошибка"
+                    rules += f"\n- Вывод [{tag}] ({NOW_TLT.strftime('%d.%m')}): {lesson}"
+                    base_lines = [l for l in rules.splitlines() if not l.startswith("- Вывод [")]
+                    learned_lines = [l for l in rules.splitlines() if l.startswith("- Вывод [")][-15:]
+                    rules = "\n".join(base_lines + learned_lines)
                 done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
                 wr = round(len([b for b in done if b["status"] == "WIN"]) / len(done) * 100, 1) if done else 0
                 ico = sport_emoji(bet.get("league", ""))
@@ -374,6 +380,7 @@ def check_results(history, rules):
         except Exception:
             pass
     return history, rules, upd
+
 def find_matches(history, rules, mkt_txt, exact_map):
     taken = {b["match"] for b in history["bets"]}
     taken_orig = {b.get("orig_match", "") for b in history["bets"] if b.get("orig_match")}
