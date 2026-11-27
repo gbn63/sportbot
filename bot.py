@@ -436,7 +436,8 @@ def check_results(history, rules):
         st = datetime.datetime.fromisoformat(bet["start_iso"])
         lg_low = bet.get("league", "").lower()
         min_h = 3.4 if ("baseball" in lg_low or "бейсбол" in lg_low) else (2.6 if ("hockey" in lg_low or "хоккей" in lg_low) else 2.5)
-        if (NOW_TLT - st).total_seconds() / 3600.0 < min_h: continue
+        elapsed_h = (NOW_TLT - st).total_seconds() / 3600.0
+        if elapsed_h < min_h: continue
         q_name = bet.get("orig_match") or bet["match"]
         api_res = fetch_stats_router(q_name, bet.get("league", ""))
         info = web_search(f"{q_name.replace(' — ', ' vs ')} final score result {st.strftime('%Y-%m-%d')}", n=5, tl="w")
@@ -445,32 +446,37 @@ def check_results(history, rules):
             f"STRICT RULES: 1) If only halftime/period score (HT, 1Q, 2Q, 1P, 2P) is shown or no Final/FT/Ended/AOT status — return finished: false. 2) Both team names must match. 3) Account for (OT) or (Reg). 4) Write 1 short tactical rule in Russian in lesson.\n"
             f"Return JSON: {{\"finished\": true|false, \"home_score\": 2, \"away_score\": 1, \"lesson\": \"вывод\"}}"
         )
+        settled = False
         try:
             res = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
             if res.get("finished") and res.get("home_score") is not None and res.get("away_score") is not None:
                 h_sc, a_sc = int(res["home_score"]), int(res["away_score"])
                 mult = settle_bet_math(bet["pick"], h_sc, a_sc)
-                if mult is None: continue
-                bet["score"] = f"{h_sc} : {a_sc}"
-                stake = bet.get("stake_rub", 500)
-                if mult > 0: bet["status"], prof, head = "WIN", round(stake * (bet["odds"] - 1.0) * mult, 0), "✅ <b>BET WON</b>"
-                elif mult == 0: bet["status"], prof, head = "VOID", 0, "🔄 <b>BET VOID</b>"
-                else: bet["status"], prof, head = "LOSE", round(stake * mult, 0), "❌ <b>BET LOST</b>"
-                history["bank"] = round(history["bank"] + prof, 0)
-                lesson = str(res.get("lesson", "")).strip()
-                if bet["status"] in ("WIN", "LOSE") and lesson and len(lesson) > 15:
-                    tag = "Плюс-паттерн" if bet["status"] == "WIN" else "Ошибка"
-                    rules += f"\n- Вывод [{tag}] ({NOW_TLT.strftime('%d.%m')}): {lesson}"
-                    base_l = [l for l in rules.splitlines() if not l.startswith("- Вывод [")]
-                    learn_l = [l for l in rules.splitlines() if l.startswith("- Вывод [")][-15:]
-                    rules = "\n".join(base_l + learn_l)
-                done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
-                wr = round(len([b for b in done if b["status"] == "WIN"]) / len(done) * 100, 1) if done else 0
-                bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
-                send_tg(f"{head}\n{sport_emoji(bet.get('league', ''))} <b>{q_name}</b>\n\n📊 Final Score: <b>{bet['score']}</b>\n🎯 Pick: <b>{bet['pick']} @ {bet['odds']}</b>\n💵 Profit: <b>{prof:+.0f} ₽</b>\n🏦 Bankroll: <b>{bank_fmt} ₽</b> • Winrate: <b>{wr}%</b>")
-                upd = True
+                if mult is not None:
+                    bet["score"] = f"{h_sc} : {a_sc}"
+                    stake = bet.get("stake_rub", 500)
+                    if mult > 0: bet["status"], prof, head = "WIN", round(stake * (bet["odds"] - 1.0) * mult, 0), "✅ <b>BET WON</b>"
+                    elif mult == 0: bet["status"], prof, head = "VOID", 0, "🔄 <b>BET VOID</b>"
+                    else: bet["status"], prof, head = "LOSE", round(stake * mult, 0), "❌ <b>BET LOST</b>"
+                    history["bank"] = round(history["bank"] + prof, 0)
+                    lesson = str(res.get("lesson", "")).strip()
+                    if bet["status"] in ("WIN", "LOSE") and lesson and len(lesson) > 15:
+                        tag = "Плюс-паттерн" if bet["status"] == "WIN" else "Ошибка"
+                        rules += f"\n- Вывод [{tag}] ({NOW_TLT.strftime('%d.%m')}): {lesson}"
+                        base_l = [l for l in rules.splitlines() if not l.startswith("- Вывод [")]
+                        learn_l = [l for l in rules.splitlines() if l.startswith("- Вывод [")][-15:]
+                        rules = "\n".join(base_l + learn_l)
+                    done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
+                    wr = round(len([b for b in done if b["status"] == "WIN"]) / len(done) * 100, 1) if done else 0
+                    bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
+                    send_tg(f"{head}\n{sport_emoji(bet.get('league', ''))} <b>{q_name}</b>\n\n📊 Final Score: <b>{bet['score']}</b>\n🎯 Pick: <b>{bet['pick']} @ {bet['odds']}</b>\n💵 Profit: <b>{prof:+.0f} ₽</b>\n🏦 Bankroll: <b>{bank_fmt} ₽</b> • Winrate: <b>{wr}%</b>")
+                    upd, settled = True, True
         except Exception: pass
+        if not settled and elapsed_h >= 4.0:
+            bet["status"], bet["score"] = "VOID", "N/A (4h)"
+            upd = True
     return history, rules, upd
+
 SPORT_SITES = {
     "cs": "hltv.org bo3.gg liquipedia.net strafe.com escharts.com",
     "dota": "sentrybot.io dltv.org dotabuff.com stratz.com liquipedia.net hawk.live",
