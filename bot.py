@@ -625,16 +625,16 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
         f"Ответь ТОЛЬКО валидным JSON-массивом без приветствий и текста: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точная ставка\", \"prob\": 0.58}}]."
 
     )
-    raw = ask_ai(prompt)
+        raw = ask_ai(prompt)
         try:
         st_idx = raw.find("[{")
-        cands = json.loads(raw[st_idx:raw.rfind("]")+1]) if st_idx != -1 else []
-
-    except Exception as e:
+        cands = json.loads(raw[st_idx:raw.rfind("]") + 1]) if st_idx != -1 else []
+        except Exception as e:
         print("JSON parse err:", e, raw[:120])
         return history, False
-    upd = False
-    for c in cands[:4]:
+
+        upd = False
+        for c in cands[:4]:
         try:
             mid, pick_exact = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\"")
             if (mid, pick_exact) not in exact_map:
