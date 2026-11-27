@@ -1,5 +1,5 @@
 {
-  "bank": 7440.0,
+  "bank": 6940.0,
   "bets": [
     {
       "match": "ФК Бангалор Юнайтед — Мегт энд Сентр",
@@ -30,7 +30,7 @@
       "score": "1 : 2"
     },
     {
-      "match": "Gonzaga — Baylor",
+      "match": "Гонзага — Бэйлор",
       "orig_match": "Gonzaga — Baylor",
       "league": "Баскетбол • США, NCAA",
       "start_iso": "2026-11-27T08:30:00+04:00",
@@ -40,8 +40,8 @@
       "prob": 0.535,
       "ev": 2.86,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "73 : 71"
     },
     {
       "match": "Чалчуапа Юнайтед — Санта-Ана",
@@ -168,8 +168,22 @@
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Гонконг — Монголия",
+      "orig_match": "Hong Kong — Mongolia",
+      "league": "Баскетбол • ФИБА, Отбор на Кубок Азии",
+      "start_iso": "2026-11-27T15:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф2 (-6) (с ОТ)",
+      "odds": 1.93,
+      "prob": 0.542,
+      "ev": 4.51,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
     }
   ],
-  "last_scan_ts": 1795772682.125191,
+  "last_scan_ts": 1795774998.848367,
   "pin_msg_id": 67
 }
