@@ -133,32 +133,32 @@ def sport_emoji(league_str):
 
 def format_pin_pick(sid, period, mtype, des, points):
     if sid == 19:
-        if period == 0: suf = " (с ОТ)"
-        elif period == 1: suf = " (осн. время)"
+        if period == 0: suf = " (OT)"
+        elif period == 1: suf = " (Reg)"
         else: return ""
     elif sid in (4, 3):
         if period != 0: return ""
-        suf = " (с ОТ)"
+        suf = " (OT)"
     else:
         if period != 0: return ""
         suf = ""
-
     if mtype == "moneyline":
         if (sid == 19 and period == 0) or sid in (4, 3):
-            return {"home": "Победа К1 (с ОТ)", "away": "Победа К2 (с ОТ)"}.get(des, "")
-        base = {"home": "П1", "away": "П2", "draw": "Ничья (Х)"}.get(des, "")
+            return {"home": "Home ML (OT)", "away": "Away ML (OT)"}.get(des, "")
+        base = {"home": "Home", "away": "Away", "draw": "Draw"}.get(des, "")
         return f"{base}{suf}" if base else ""
     if mtype == "spread" and points is not None:
         pv = float(points)
         if round(pv * 4) % 2 != 0: return ""
-        side = "Ф1" if des == "home" else "Ф2" if des == "away" else ""
-        return f"{side} ({pv:+g}){suf}" if side else ""
+        side = "Home" if des == "home" else "Away" if des == "away" else ""
+        return f"{side} {pv:+g}{suf}" if side else ""
     if mtype == "total" and points is not None:
         pv = float(points)
         if round(pv * 4) % 2 != 0: return ""
-        side = "ТБ" if des == "over" else "ТМ" if des == "under" else ""
-        return f"{side} ({pv:g}){suf}" if side else ""
+        side = "Over" if des == "over" else "Under" if des == "under" else ""
+        return f"{side} {pv:g}{suf}" if side else ""
     return ""
+
 
 def get_pinnacle_feed(include_prematch=True, auto_banned=None, odds_mem=None):
     auto_banned = auto_banned or set()
@@ -394,17 +394,18 @@ def eval_line_diff(diff):
 
 def settle_bet_math(pick, h_sc, a_sc):
     p = pick.strip()
-    if p.startswith(("П1", "Победа К1")): return 1.0 if h_sc > a_sc else -1.0
-    if p.startswith(("П2", "Победа К2")): return 1.0 if a_sc > h_sc else -1.0
-    if p.startswith("Ничья"): return 1.0 if h_sc == a_sc else -1.0
-    m = re.search(r"\(([+-]?\d+(?:\.\d+)?)\)", p)
+    if p.startswith(("Home ML", "Home (Reg)", "П1", "Победа К1")) or p == "Home": return 1.0 if h_sc > a_sc else -1.0
+    if p.startswith(("Away ML", "Away (Reg)", "П2", "Победа К2")) or p == "Away": return 1.0 if a_sc > h_sc else -1.0
+    if p.startswith(("Draw", "Ничья")): return 1.0 if h_sc == a_sc else -1.0
+    m = re.search(r"([+-]?\d+(?:\.\d+)?)", p)
     if m:
         val = float(m.group(1))
-        if p.startswith("Ф1"): return eval_line_diff((h_sc - a_sc) + val)
-        if p.startswith("Ф2"): return eval_line_diff((a_sc - h_sc) + val)
-        if p.startswith("ТБ"): return eval_line_diff((h_sc + a_sc) - val)
-        if p.startswith("ТМ"): return eval_line_diff(val - (h_sc + a_sc))
+        if p.startswith(("Home ", "Ф1")): return eval_line_diff((h_sc - a_sc) + val)
+        if p.startswith(("Away ", "Ф2")): return eval_line_diff((a_sc - h_sc) + val)
+        if p.startswith(("Over ", "ТБ")): return eval_line_diff((h_sc + a_sc) - val)
+        if p.startswith(("Under ", "ТМ")): return eval_line_diff(val - (h_sc + a_sc))
     return None
+
 
 def get_all_live_scores():
     espn, out = ".".join(["site", "api", "espn", "com"]), []
@@ -432,16 +433,17 @@ def check_results(history, rules):
     upd, live_board = False, get_all_live_scores()
     for bet in history["bets"]:
         if bet["status"] != "PENDING": continue
-        st = datetime.datetime.fromisoformat(bet["start_iso"])
-        if (NOW_TLT - st).total_seconds() / 3600.0 < 2.2: continue
+                st = datetime.datetime.fromisoformat(bet["start_iso"])
+        lg_low = bet.get("league", "").lower()
+        min_h = 3.4 if ("baseball" in lg_low or "бейсбол" in lg_low) else (2.6 if ("hockey" in lg_low or "хоккей" in lg_low) else 2.5)
+        if (NOW_TLT - st).total_seconds() / 3600.0 < min_h: continue
         q_name = bet.get("orig_match") or bet["match"]
         api_res = fetch_stats_router(q_name, bet.get("league", ""))
         info = web_search(f"{q_name.replace(' — ', ' vs ')} final score result {st.strftime('%Y-%m-%d')}", n=5, tl="w")
         raw = ask_ai(
-            f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {q_name}. Ставка: {bet['pick']}.\nТабло:\n{live_board}\nБаза счетов (API):\n{api_res}\nПоиск:\n{info}\n"
-
-            f"1. Если матч не завершён (нет Final / FT) — finished: false. 2. Учти (с ОТ) или (осн. время). 3. В lesson напиши 1 тактическое правило для этой лиги/рынка (не пересказывай счёт).\n"
-            f"Верни JSON: {{\"finished\": true|false, \"home_score\": 2, \"away_score\": 1, \"match_ru\": \"Команда 1 — Команда 2\", \"lesson\": \"вывод\"}}"
+            f"Check if the match is COMPLETELY FINISHED. Match: {q_name} | League: {bet.get('league', '')} | Pick: {bet['pick']}.\nScoreboard:\n{live_board}\nStats API:\n{api_res}\nSearch:\n{info}\n"
+            f"STRICT RULES: 1) If only halftime/period score (HT, 1Q, 2Q, 1P, 2P) is shown or no Final/FT/Ended/AOT status — return finished: false. 2) Both team names must match. 3) Account for (OT) or (Reg). 4) Write 1 short tactical rule in Russian in lesson.\n"
+            f"Return JSON: {{\"finished\": true|false, \"home_score\": 2, \"away_score\": 1, \"lesson\": \"вывод\"}}"
         )
         try:
             res = json.loads(raw[raw.find("{"):raw.rfind("}")+1])
@@ -449,13 +451,11 @@ def check_results(history, rules):
                 h_sc, a_sc = int(res["home_score"]), int(res["away_score"])
                 mult = settle_bet_math(bet["pick"], h_sc, a_sc)
                 if mult is None: continue
-                m_ru = bet["match"]
                 bet["score"] = f"{h_sc} : {a_sc}"
-
                 stake = bet.get("stake_rub", 500)
-                if mult > 0: bet["status"], prof, head = "WIN", round(stake * (bet["odds"] - 1.0) * mult, 0), "✅ <b>СТАВКА ЗАШЛА</b>"
-                elif mult == 0: bet["status"], prof, head = "VOID", 0, "🔄 <b>ВОЗВРАТ СТАВКИ</b>"
-                else: bet["status"], prof, head = "LOSE", round(stake * mult, 0), "❌ <b>СТАВКА НЕ ЗАШЛА</b>"
+                if mult > 0: bet["status"], prof, head = "WIN", round(stake * (bet["odds"] - 1.0) * mult, 0), "✅ <b>BET WON</b>"
+                elif mult == 0: bet["status"], prof, head = "VOID", 0, "🔄 <b>BET VOID</b>"
+                else: bet["status"], prof, head = "LOSE", round(stake * mult, 0), "❌ <b>BET LOST</b>"
                 history["bank"] = round(history["bank"] + prof, 0)
                 lesson = str(res.get("lesson", "")).strip()
                 if bet["status"] in ("WIN", "LOSE") and lesson and len(lesson) > 15:
@@ -467,7 +467,7 @@ def check_results(history, rules):
                 done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
                 wr = round(len([b for b in done if b["status"] == "WIN"]) / len(done) * 100, 1) if done else 0
                 bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
-                send_tg(f"{head}\n{sport_emoji(bet.get('league', ''))} <b>{m_ru}</b>\n\n📊 Итоговый счёт: <b>{bet['score']}</b>\n🎯 Исход: <b>{bet['pick']} за {bet['odds']}</b>\n💵 Результат: <b>{prof:+.0f} ₽</b>\n🏦 Банк: <b>{bank_fmt} ₽</b> • Проход: <b>{wr}%</b>")
+                send_tg(f"{head}\n{sport_emoji(bet.get('league', ''))} <b>{q_name}</b>\n\n📊 Final Score: <b>{bet['score']}</b>\n🎯 Pick: <b>{bet['pick']} @ {bet['odds']}</b>\n💵 Profit: <b>{prof:+.0f} ₽</b>\n🏦 Bankroll: <b>{bank_fmt} ₽</b> • Winrate: <b>{wr}%</b>")
                 upd = True
         except Exception: pass
     return history, rules, upd
