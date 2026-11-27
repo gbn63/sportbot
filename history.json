@@ -1,5 +1,5 @@
 {
-  "bank": 10241.0,
+  "bank": 10726.0,
   "bets": [
     {
       "match": "Чикаго Беарз — Детройт Лайонс",
@@ -113,17 +113,17 @@
       "score": ""
     },
     {
-      "match": "ART Municipal Jalapa — San Marcos FC",
+      "match": "АРТ Мунципал Халапа — Сан Маркос ФК",
       "league": "Nicaragua – Primera Division",
       "start_iso": "2026-11-27T02:00:00+04:00",
       "type": "Обратка",
-      "pick": "П2",
+      "pick": "Ставка на победу второй команды (П2)",
       "odds": 3.4,
       "prob": 0.35,
       "ev": 19.27,
       "stake_rub": 202.0,
-      "status": "PENDING",
-      "score": "",
+      "status": "WIN",
+      "score": "0 : 1",
       "reminded_15": true,
       "last_sig": "0:0"
     },
