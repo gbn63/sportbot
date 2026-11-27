@@ -1,8 +1,8 @@
 {
-  "bank": 9500,
+  "bank": 8500,
   "bets": [
     {
-      "match": "FC Bengaluru United — Megt and Centre",
+      "match": "ФК Бангалор Юнайтед — Мегт энд Сентр",
       "orig_match": "FC Bengaluru United — Megt and Centre",
       "league": "Футбол • Индия, Bangalore Super Division",
       "start_iso": "2026-11-27T06:45:00+04:00",
@@ -12,8 +12,8 @@
       "prob": 0.575,
       "ev": 2.75,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "1 : 2"
     },
     {
       "match": "Nankatsu — Aries Toshima",
@@ -128,7 +128,7 @@
       "score": ""
     },
     {
-      "match": "Club Leon — Cruz Azul",
+      "match": "Леон — Круз Асуал",
       "orig_match": "Club Leon (Corners) — Cruz Azul (Corners)",
       "league": "Футбол • Mexico – Liga MX",
       "start_iso": "2026-11-27T07:10:00+04:00",
@@ -138,8 +138,8 @@
       "prob": 0.59,
       "ev": 5.1,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "0 : 4"
     },
     {
       "match": "Канберра Кэпиталс — Джилонг Юнайтед",
@@ -170,6 +170,6 @@
       "score": ""
     }
   ],
-  "last_scan_ts": 1795755130.978169,
+  "last_scan_ts": 1795758828.273895,
   "pin_msg_id": 67
 }
