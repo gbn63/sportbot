@@ -1,5 +1,5 @@
 {
-  "bank": 7940.0,
+  "bank": 7440.0,
   "bets": [
     {
       "match": "ФК Бангалор Юнайтед — Мегт энд Сентр",
@@ -72,7 +72,7 @@
       "score": ""
     },
     {
-      "match": "Jordan — New Zealand",
+      "match": "Иордания — Новая Зеландия",
       "orig_match": "Jordan — New Zealand",
       "league": "Баскетбол • FIBA – World Cup Asia Qualification",
       "start_iso": "2026-11-27T10:00:00+04:00",
@@ -82,8 +82,8 @@
       "prob": 0.574,
       "ev": 3.91,
       "stake_rub": 500,
-      "status": "PENDING",
-      "score": ""
+      "status": "LOSE",
+      "score": "64 : 103"
     },
     {
       "match": "Lynn Vision — HEROIC",
@@ -170,6 +170,6 @@
       "score": ""
     }
   ],
-  "last_scan_ts": 1795768415.728461,
+  "last_scan_ts": 1795772682.125191,
   "pin_msg_id": 67
 }
