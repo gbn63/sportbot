@@ -623,7 +623,7 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
 
 
     
-        mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem[:600]}\n" if league_mem else ""
+    mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem[:600]}\n" if league_mem else ""
     short_mkt = "\n".join(mkt_txt.splitlines()[:18])
     prompt = (
         f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules[-1200:]}\n{mem_block}\n{short_mkt}\n\nФорма:\n{s1[:1200]}\n\n"
