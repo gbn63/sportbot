@@ -57,7 +57,8 @@ def update_pinned_stats(history):
             sp_stats[sp]["w"] += 1
     top_sp = "сбор данных"
     if sp_stats:
-        best_sp, best_data = max(sp_stats.items(), key=lambda x: (x["w"] / x["t"], x["t"]))
+        best_sp, best_data = max(sp_stats.items(), key=lambda x: (x[1]["w"] / x[1]["t"], x[1]["t"]))
+
         top_sp = f"{best_sp} ({round(best_data['w'] / best_data['t'] * 100)}%)"
 
     bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
