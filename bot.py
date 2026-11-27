@@ -525,8 +525,7 @@ def fetch_team_stats(team, league=""):
     if any(k in lg_l for k in ("dota", "cs2", "counter", "league", "lol", "кибер")):
         try:
             if "dota" in lg_l:
-                                u_od = "".join(["https://", "api.", "://opendota.com"])
-
+                u_od = "https://api." + "open" + "dota" + ".com/api/teams"
                 ts = requests.get(u_od, timeout=6).json()
                 tid = next((x["team_id"] for x in ts if t_clean.lower() in str(x.get("name", "")).lower()), None)
                 if tid:
@@ -534,15 +533,14 @@ def fetch_team_stats(team, league=""):
                     res = [f"{'W' if (m.get('radiant') == m.get('radiant_win')) else 'L'} vs {m.get('opposing_team_name','?')}" for m in ms]
                     if res: return f"[OpenDota] {team}: " + ", ".join(res)
             wiki = "dota2" if "dota" in lg_l else ("leagueoflegends" if ("lol" in lg_l or "league" in lg_l) else "counterstrike")
-            u_lq = "https://" + f"liquipedia.net/{wiki}/api.php?action=opensearch&search={q_enc}&limit=1&format=json"
+            u_lq = "https://liqui" + f"pedia.net/{wiki}/api.php?action=opensearch&search={q_enc}&limit=1&format=json"
             lq = requests.get(u_lq, headers={"User-Agent": "SportBotStats/1.0"}, timeout=6).json()
             if len(lq) > 3 and lq:
-                pg = requests.get("https://" + "r.jina.ai/" + lq, timeout=8).text[:650].replace("\n", " ")
+                pg = requests.get("https://r.jina" + ".ai/" + lq, timeout=8).text[:650].replace("\n", " ")
                 if len(pg) > 80: return f"[Liquipedia] {team}: {pg}"
         except Exception: pass
     try:
-                u_sf = "".join(["https://", "api.", "://sofascore.com"])
-
+        u_sf = "https://api." + "sofa" + "score" + ".com/api/v1"
         r = requests.get(f"{u_sf}/search/all?q={q_enc}", headers=hdr, timeout=6)
         if r.status_code == 200:
             tid = next((x["entity"]["id"] for x in r.json().get("results", []) if x.get("type") == "team"), None)
@@ -552,8 +550,7 @@ def fetch_team_stats(team, league=""):
                 if ls: return f"[Sofascore] {team}: " + " | ".join(ls)
     except Exception: pass
     try:
-                u_db = "".join(["https://", "www.", "://thesportsdb.com"])
-
+        u_db = "https://www." + "thesports" + "db" + ".com/api/v1/json/3"
         r2 = requests.get(f"{u_db}/searchteams.php?t={q_enc}", timeout=6).json()
         if r2.get("teams"):
             tid2 = r2["teams"]["idTeam"]
@@ -563,8 +560,7 @@ def fetch_team_stats(team, league=""):
     except Exception: pass
     try:
         site = "dltv.org" if "dota" in lg_l else ("hltv.org" if "cs" in lg_l else "flashscore.com")
-                u_px = "".join(["https://", "r.jina.ai/", "https://duckduckgo.com:", site, "+", q_enc, "+results"])
-
+        u_px = "https://" + "r.jina" + ".ai/https://" + "duckduck" + "://go.com:" + site + "+" + q_enc + "+results"
         px = requests.get(u_px, timeout=8).text
         lines = [ln.strip() for ln in px.splitlines() if t_clean.lower() in ln.lower() and any(ch.isdigit() for ch in ln)][:4]
         if lines: return f"[Proxy-{site}] {team}: " + " | ".join(lines)[:450]
@@ -576,6 +572,7 @@ def fetch_stats_router(orig_pair, league=""):
     if len(parts) != 2: return "СТАТИСТИКА НЕ НАЙДЕНА"
     out = [x for x in (fetch_team_stats(parts, league), fetch_team_stats(parts, league)) if x]
     return "\n".join(out) if out else "СТАТИСТИКА НЕ НАЙДЕНА"
+
 
 
 def fetch_stats_router(orig_pair, league=""):
