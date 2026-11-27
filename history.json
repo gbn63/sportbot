@@ -1,6 +1,77 @@
 {
   "bank": 10000,
-  "bets": [],
-  "last_scan_ts": 1795740872.987459,
+  "bets": [
+    {
+      "match": "FC Bengaluru United — Megt and Centre",
+      "orig_match": "FC Bengaluru United — Megt and Centre",
+      "league": "Футбол • Индия, Bangalore Super Division",
+      "start_iso": "2026-11-27T06:45:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (-3)",
+      "odds": 1.78,
+      "prob": 0.575,
+      "ev": 2.75,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Nankatsu — Aries Toshima",
+      "orig_match": "Nankatsu — Aries Toshima",
+      "league": "Футбол • Япония, Региональная лига",
+      "start_iso": "2026-11-27T08:30:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (-0.25)",
+      "odds": 1.84,
+      "prob": 0.556,
+      "ev": 2.16,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Gonzaga — Baylor",
+      "orig_match": "Gonzaga — Baylor",
+      "league": "Баскетбол • США, NCAA",
+      "start_iso": "2026-11-27T08:30:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (-3) (с ОТ)",
+      "odds": 1.92,
+      "prob": 0.535,
+      "ev": 2.86,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Chalchuapa United — Santa Ana",
+      "orig_match": "Chalchuapa United — Santa Ana",
+      "league": "Баскетбол • Сальвадор, Лига Майор",
+      "start_iso": "2026-11-27T05:15:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (-5.5) (с ОТ)",
+      "odds": 1.86,
+      "prob": 0.554,
+      "ev": 3.6,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Jaguares de Nayarit — Naranjeros de Hermosillo",
+      "orig_match": "Jaguares de Nayarit — Naranjeros de Hermosillo",
+      "league": "Бейсбол • Мексика, Тихоокеанская лига",
+      "start_iso": "2026-11-27T06:30:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+1.5) (с ОТ)",
+      "odds": 1.71,
+      "prob": 0.596,
+      "ev": 2.03,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    }
+  ],
+  "last_scan_ts": 1795741457.242005,
   "pin_msg_id": 67
 }
