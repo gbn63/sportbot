@@ -140,8 +140,36 @@
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "Канберра Кэпиталс — Джилонг Юнайтед",
+      "orig_match": "Canberra Capitals — Geelong United",
+      "league": "Баскетбол • Австралия, WNBL",
+      "start_iso": "2026-11-27T12:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+5.5) (с ОТ)",
+      "odds": 1.83,
+      "prob": 0.572,
+      "ev": 4.86,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Индонезия — Таиланд",
+      "orig_match": "Indonesia — Thailand",
+      "league": "Баскетбол • FIBA, Квалификация Кубка Азии",
+      "start_iso": "2026-11-27T12:00:00+04:00",
+      "is_live": false,
+      "pick": "Ф1 (+6.5) (с ОТ)",
+      "odds": 1.93,
+      "prob": 0.55,
+      "ev": 6.03,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
     }
   ],
-  "last_scan_ts": 1795751298.227601,
+  "last_scan_ts": 1795755130.978169,
   "pin_msg_id": 67
 }
