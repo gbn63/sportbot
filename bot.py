@@ -531,7 +531,7 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
     taken_orig = {b.get("orig_match", "") for b in history["bets"] if b.get("orig_match")}
     d_str, t_str = NOW_TLT.strftime("%d.%m.%Y"), NOW_TLT.strftime("%H:%M")
     tom_str = (NOW_TLT + datetime.timedelta(days=1)).strftime("%d.%m.%Y")
-        q_teams = " ".join(
+    q_teams = " ".join(
         list(
             {
                 str(v[1]).replace(" — ", " vs ")
@@ -540,6 +540,7 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
             }
         )[:3]
     )
+
     s1 = web_search(f"{q_teams} stats form odds {d_str} {tom_str}", n=5, tl="w")
 
 
