@@ -623,21 +623,25 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
 
 
     
-    mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem}\n" if league_mem else ""
+        mem_block = f"\nДОСЬЕ ЛИГ:\n{league_mem[:600]}\n" if league_mem else ""
+    short_mkt = "\n".join(mkt_txt.splitlines()[:18])
     prompt = (
-        f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules}\n{mem_block}\n{mkt_txt}\n\nФорма и прогнозы:\n{s1}\n\n"
-        f"Отбери 1–4 лучших кандидата (прематч 4ч от {t_str} и стабильный [LIVE]; исключи: {list(taken)}) по 9 дисциплинам (Баскетбол, Бейсбол, Волейбол, Гандбол, CS2, Dota 2, LoL, Футбол, Хоккей), кэфы 1.60–2.45.\n"
-        f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ фразу в кавычках из Рынки, в match_id — число из [ID:...]. Названия команд и лиги оставь строго на языке оригинала из линии БК (без перевода).\n"
-        f"Ответь ТОЛЬКО валидным JSON-массивом без приветствий и текста: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точная ставка\", \"prob\": 0.58}}]."
-
-        )
+        f"Ты квантовый аналитик синдиката. Пиши на русском. Время: {d_str} {t_str}.\nПравила:\n{rules[-1200:]}\n{mem_block}\n{short_mkt}\n\nФорма:\n{s1[:1200]}\n\n"
+        f"Отбери 1-4 лучших кандидата (прематч 4ч от {t_str} и стабильный [LIVE]; исключи: {list(taken)}) по 9 дисциплинам (Баскетбол, Бейсбол, Волейбол, Гандбол, Теннис, Настольный теннис, Футбол, Хоккей, Киберспорт).\n"
+        f"Ищи [🔥ПРОГРУЗ], перекос с острыми/мягкими БК и китов Polymarket/Kalshi/SX Bet; избегай [⚠️322/ОБВАЛ] и глухих лиг без статистики. В pick скопируй ТОЧНУЮ строку исхода после |.\n"
+        f"Ответь ТОЛЬКО валидным JSON-массивом без приветствий и текста: [{{\"match_id\": 123456, \"match\": \"Команда 1 — Команда 2\", \"league\": \"Вид спорта • Лига\", \"pick\": \"Точный исход\", \"prob\": 0.58}}]"
+    )
     raw = ask_ai(prompt)
+    if not raw:
+        print("Find AI empty response (limit)")
+        return history, False
     try:
         st_idx = raw.find("[{")
         cands = json.loads(raw[st_idx:raw.rfind("]") + 1]) if st_idx != -1 else []
     except Exception as e:
         print("JSON parse err:", e, raw[:120])
         return history, False
+
 
     upd = False
     for c in cands[:4]:
