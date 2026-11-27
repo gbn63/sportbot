@@ -1,4 +1,4 @@
-import os, re, json, time, datetime, requests, warnings
+import os, re, html, json, time, datetime, requests, warnings
 import numpy as np
 from ddgs import DDGS
 
@@ -57,7 +57,7 @@ def update_pinned_stats(history):
             sp_stats[sp]["w"] += 1
     top_sp = "сбор данных"
     if sp_stats:
-        best_sp, best_data = max(sp_stats.items(), key=lambda x: (x[1]["w"] / x[1]["t"], x[1]["t"]))
+        best_sp, best_data = max(sp_stats.items(), key=lambda x: (x["w"] / x["t"], x["t"]))
         top_sp = f"{best_sp} ({round(best_data['w'] / best_data['t'] * 100)}%)"
 
     bank_fmt = f"{int(history['bank']):,}".replace(",", " ")
@@ -541,7 +541,7 @@ def find_matches(history, rules, mkt_txt, exact_map):
 
 def send_daily_report(history):
     today_str = NOW_TLT.strftime("%Y-%m-%d")
-    if NOW_TLT.hour == 9 and NOW_TLT.minute < 5 and history.get("last_report") != today_str:
+    if NOW_TLT.hour == 9 and history.get("last_report") != today_str:
         done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
         wins = len([b for b in done if b["status"] == "WIN"])
         pend = len([b for b in history["bets"] if b["status"] == "PENDING"])
@@ -552,6 +552,51 @@ def send_daily_report(history):
         return True
     return False
 
+def generate_web_table(history):
+    done = [b for b in history["bets"] if b["status"] in ("WIN", "LOSE")]
+    wins = len([b for b in done if b["status"] == "WIN"])
+    losses = len([b for b in done if b["status"] == "LOSE"])
+    wr = round(wins / len(done) * 100, 1) if done else 0.0
+    diff = history["bank"] - 10000
+    staked = sum(b.get("stake_rub", 500) for b in done)
+    roi = round((diff / staked) * 100, 1) if staked > 0 else 0.0
+    rows = []
+    for b in reversed(history["bets"]):
+        st = b.get("status", "PENDING")
+        stake = b.get("stake_rub", 500)
+        odds = float(b.get("odds", 0))
+        if st == "WIN":
+            badge, cls, prof = "✅ Зашла", "win", f"+{round(stake * (odds - 1.0)):.0f} ₽"
+        elif st == "LOSE":
+            badge, cls, prof = "❌ Минус", "lose", f"-{stake:.0f} ₽"
+        elif st == "VOID":
+            badge, cls, prof = "🔄 Возврат", "void", "0 ₽"
+        else:
+            badge, cls, prof = "⏳ В игре", "pend", "—"
+        dt_txt = b.get("start_iso", "")[:16].replace("T", " ")
+        lg = html.escape(b.get("league", ""))
+        sp = html.escape(next(iter(b.get("league", "").split("•"))).strip())
+        mt = html.escape(b.get("match", ""))
+        pk = html.escape(b.get("pick", ""))
+        sc = html.escape(b.get("score", "") or "—")
+        rows.append(f"<tr data-sp='{sp}' data-st='{st}'><td>{dt_txt}</td><td>{lg}</td><td><b>{mt}</b></td><td>{pk}</td><td><b>{odds:.2f}</b></td><td>{sc}</td><td class='{cls}'>{badge}</td><td class='{cls}'><b>{prof}</b></td></tr>")
+    page = f"""<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Статистика канала</title>
+<style>body{{font-family:system-ui,-apple-system,sans-serif;background:#0b1120;color:#e2e8f0;margin:0;padding:20px}}
+.wrap{{max-width:1100px;margin:0 auto}}h1{{font-size:22px;margin:0 0 16px}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}}
+.card{{background:#1e293b;padding:14px;border-radius:12px;border:1px solid #334155}}.card span{{font-size:12px;color:#94a3b8;display:block}}.card b{{font-size:20px;margin-top:4px;display:block}}
+.filters{{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}}button{{background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:7px 12px;border-radius:8px;cursor:pointer}}button.act{{background:#2563eb;border-color:#2563eb}}
+.tbl{{overflow-x:auto;background:#1e293b;border-radius:12px;border:1px solid #334155}}table{{width:100%;border-collapse:collapse;font-size:14px}}
+th,td{{padding:11px 12px;text-align:left;border-bottom:1px solid #334155}}th{{color:#94a3b8;font-weight:600;background:#162032}}
+.win{{color:#4ade80}}.lose{{color:#f87171}}.pend{{color:#fbbf24}}.void{{color:#94a3b8}}</style></head>
+<body><div class="wrap"><h1>📊 Журнал сигналов и статистика (обновлено {NOW_TLT.strftime('%d.%m.%Y %H:%M')})</h1>
+<div class="cards"><div class="card"><span>Банк</span><b>{int(history['bank']):,} ₽</b></div><div class="card"><span>Профит</span><b>{diff:+.0f} ₽</b></div>
+<div class="card"><span>ROI</span><b>{roi:+.1f}%</b></div><div class="card"><span>Винрейт</span><b>{wr}% ({wins}/{losses})</b></div></div>
+<div class="filters"><button class="act" onclick="flt('ALL',this)">Все</button><button onclick="flt('WIN',this)">✅ Зашли</button><button onclick="flt('LOSE',this)">❌ Минус</button><button onclick="flt('PENDING',this)">⏳ В игре</button></div>
+<div class="tbl"><table><thead><tr><th>Время</th><th>Лига</th><th>Матч</th><th>Исход</th><th>Кэф</th><th>Счёт</th><th>Статус</th><th>Итог</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></div></div>
+<script>function flt(s,b){{document.querySelectorAll('button').forEach(x=>x.classList.remove('act'));b.classList.add('act');document.querySelectorAll('tbody tr').forEach(r=>{{r.style.display=(s==='ALL'||r.dataset.st===s)?'':'none'}})}}</script></body></html>"""
+    with open("index.html", "w", encoding="utf-8") as f:
+        f.write(page)
 def main():
     with open("history.json", "r", encoding="utf-8") as f:
         history = json.load(f)
@@ -567,7 +612,8 @@ def main():
     mkt_txt, exact_map = get_all_sources(include_prematch=do_pre)
     history, u2 = find_matches(history, rules, mkt_txt, exact_map)
     pin_upd = update_pinned_stats(history)
-    if u1 or u2 or rep_sent or pin_upd or scan_ran:
+    generate_web_table(history)
+    if u1 or u2 or rep_sent or pin_upd or scan_ran or not os.path.exists("index.html"):
         with open("history.json", "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
         with open("rules.txt", "w", encoding="utf-8") as f:
