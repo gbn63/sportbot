@@ -1,5 +1,5 @@
 {
-  "bank": 10726.0,
+  "bank": 10487.0,
   "bets": [
     {
       "match": "Чикаго Беарз — Детройт Лайонс",
@@ -47,7 +47,7 @@
       "last_sig": "2:1"
     },
     {
-      "match": "Ecatepec — Atlético Mexicano F.E.",
+      "match": "Экатеп — Атлетико Мексикано Ф.Э.",
       "league": "Mexico - Liga TDP",
       "start_iso": "2026-11-27T02:00:00+04:00",
       "type": "Обратка",
@@ -56,8 +56,8 @@
       "prob": 0.6,
       "ev": 6.9,
       "stake_rub": 239.0,
-      "status": "PENDING",
-      "score": "",
+      "status": "LOSE",
+      "score": "5 : 0",
       "reminded_15": true
     },
     {
@@ -259,7 +259,34 @@
       "stake_rub": 500,
       "status": "PENDING",
       "score": ""
+    },
+    {
+      "match": "UC Davis — Jacksonville State",
+      "orig_match": "UC Davis — Jacksonville State",
+      "league": "Баскетбол • NCAA (США)",
+      "start_iso": "2026-11-27T05:00:00+04:00",
+      "pick": "Победа К1 (с ОТ)",
+      "odds": 2.27,
+      "prob": 0.523,
+      "ev": 18.22,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
+    },
+    {
+      "match": "Aguilas de Mexicali — Charros de Jalisco",
+      "orig_match": "Aguilas de Mexicali — Charros de Jalisco",
+      "league": "Бейсбол • Mexican Pacific League (Мексика)",
+      "start_iso": "2026-11-27T07:30:00+04:00",
+      "pick": "ТБ (9) (с ОТ)",
+      "odds": 1.92,
+      "prob": 0.543,
+      "ev": 4.39,
+      "stake_rub": 500,
+      "status": "PENDING",
+      "score": ""
     }
   ],
-  "pin_msg_id": 61
+  "pin_msg_id": 61,
+  "last_scan_ts": 1795739729.157343
 }
