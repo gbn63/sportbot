@@ -435,9 +435,11 @@ def check_results(history, rules):
         st = datetime.datetime.fromisoformat(bet["start_iso"])
         if (NOW_TLT - st).total_seconds() / 3600.0 < 2.2: continue
         q_name = bet.get("orig_match") or bet["match"]
-        info = web_search(f"{bet['match']} {q_name} финальный счет результат FT Final {st.strftime('%d.%m.%Y')}")
+        api_res = fetch_stats_router(q_name, bet.get("league", ""))
+        info = web_search(f"{q_name.replace(' — ', ' vs ')} final score result {st.strftime('%Y-%m-%d')}", n=5, tl="w")
         raw = ask_ai(
-            f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {bet['match']} ({q_name}). Ставка: {bet['pick']}.\nТабло:\n{live_board}\nПоиск:\n{info}\n"
+            f"Проверь, ЗАВЕРШЁН ли матч окончательно. Матч: {q_name}. Ставка: {bet['pick']}.\nТабло:\n{live_board}\nБаза счетов (API):\n{api_res}\nПоиск:\n{info}\n"
+
             f"1. Если матч не завершён (нет Final / FT) — finished: false. 2. Учти (с ОТ) или (осн. время). 3. В lesson напиши 1 тактическое правило для этой лиги/рынка (не пересказывай счёт).\n"
             f"Верни JSON: {{\"finished\": true|false, \"home_score\": 2, \"away_score\": 1, \"match_ru\": \"Команда 1 — Команда 2\", \"lesson\": \"вывод\"}}"
         )
