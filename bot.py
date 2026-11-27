@@ -558,7 +558,7 @@ def find_matches(history, rules, mkt_txt, exact_map, league_mem=""):
         print("JSON parse err:", e, raw[:120])
         return history, False
     upd = False
-        for c in cands[:4]:
+    for c in cands[:4]:
         try:
             mid, pick_exact = int(c.get("match_id", 0)), str(c.get("pick", "")).strip().strip("«»\"")
             if (mid, pick_exact) not in exact_map:
